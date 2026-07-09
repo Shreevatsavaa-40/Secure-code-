@@ -1,0 +1,2298 @@
+﻿
+
+
+
+
+Sentry Scan — Static Security Analyzer
+
+  @font-face { font-family: 'sys-mono'; src: local('IBM Plex Mono'), local('Cascadia Code'), local('SF Mono'); }
+
+  :root {
+    --bg: #0B0F14;
+    --surface: #121922;
+    --surface-alt: #19222C;
+    --border: #232E3A;
+    --text: #E6EDF3;
+    --text-dim: #8B98A5;
+    --text-faint: #576273;
+    --accent: #f7eb50;
+    --accent-dim: #2C6F66;
+    --critical: #F43F5E;
+    --high: #FB923C;
+    --medium: #FBBF24;
+    --low: #60A5FA;
+    --safe: #34D399;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+    --sans: 'IBM Plex Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+
+  a { color: var(--accent); }
+
+  /* ---------- Scanline signature background ---------- */
+  .scanfield {
+    position: relative;
+    overflow: hidden;
+  }
+  .scanfield::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      rgba(94, 234, 212, 0.035) 0px,
+      rgba(94, 234, 212, 0.035) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: rgba(11,15,20,0.9);
+    backdrop-filter: blur(8px);
+    z-index: 10;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    font-size: 16px;
+  }
+  .brand .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px 1px var(--accent);
+  }
+  nav a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    margin-left: 24px;
+    font-family: var(--mono);
+  }
+  nav a:hover { color: var(--text); }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    padding: 72px 32px 56px;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(30px, 4.4vw, 50px);
+    line-height: 1.12;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 20px;
+    max-width: 780px;
+  }
+  h1 .accent { color: var(--accent); }
+  .hero p.lede {
+    color: var(--text-dim);
+    font-size: 17px;
+    max-width: 560px;
+    margin: 0 0 32px;
+  }
+
+  .hero-stats {
+    display: flex;
+    gap: 36px;
+    flex-wrap: wrap;
+    padding: 22px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 26px;
+  }
+  .stat-num {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 28px;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-label {
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  .lang-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .lang-chip {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 100px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color .15s, color .15s;
+  }
+  .lang-chip:hover { border-color: var(--accent-dim); color: var(--text); }
+
+  /* ---------- Workspace ---------- */
+  .workspace {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 32px 80px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 900px) {
+    .workspace { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    min-height: 480px;
+  }
+  .panel-head {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  textarea#codeInput {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 18px;
+    tab-size: 4;
+  }
+  textarea#codeInput::placeholder { color: var(--text-faint); }
+
+  .input-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .file-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    border: 1px dashed var(--border);
+    padding: 7px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .file-label:hover { border-color: var(--accent-dim); color: var(--text); }
+  input[type="file"] { display: none; }
+
+  .file-meta {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+  .file-meta.warn { color: var(--medium); }
+  .file-meta.error { color: var(--critical); }
+
+  #codePanel.drop-active { outline: 2px dashed var(--accent-dim); outline-offset: -2px; }
+
+  .scan-progress {
+    height: 3px;
+    background: var(--surface-alt);
+    overflow: hidden;
+  }
+  .scan-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width .12s linear;
+  }
+
+  .cancel-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-left: 8px;
+    transition: color .15s, border-color .15s;
+  }
+  .cancel-btn:hover { color: var(--critical); border-color: var(--critical); }
+
+  button#scanBtn {
+    background: var(--accent);
+    color: #08211D;
+    border: none;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 13px;
+    padding: 9px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: transform .1s, box-shadow .15s;
+  }
+  button#scanBtn:hover { box-shadow: 0 0 0 3px rgba(94,234,212,0.18); }
+  button#scanBtn:active { transform: scale(0.97); }
+  button#scanBtn:disabled { opacity: 0.5; cursor: default; }
+
+  select#failOn {
+    background: var(--surface-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 8px;
+    border-radius: 6px;
+  }
+
+  /* ---------- Scan sweep animation ---------- */
+  .sweep-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    border-radius: 10px;
+    display: none;
+  }
+  .sweep-layer.active { display: block; }
+  .sweep-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 60px;
+    background: linear-gradient(to bottom, transparent, rgba(94,234,212,0.18), transparent);
+    animation: sweep 1.1s linear infinite;
+  }
+  @keyframes sweep {
+    from { transform: translateY(-60px); }
+    to { transform: translateY(480px); }
+  }
+  #codePanel { position: relative; }
+
+  /* ---------- Results ---------- */
+  .results-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px;
+    gap: 8px;
+  }
+
+  .summary-strip {
+    display: flex;
+    gap: 8px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .chip {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 4px 10px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip .n { color: var(--text); font-weight: 600; }
+  .chip.critical .swatch { background: var(--critical); }
+  .chip.high .swatch { background: var(--high); }
+  .chip.medium .swatch { background: var(--medium); }
+  .chip.low .swatch { background: var(--low); }
+  .swatch { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+  .finding {
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--border);
+    opacity: 0;
+    animation: reveal .35s ease forwards;
+  }
+  @keyframes reveal { to { opacity: 1; transform: translateY(0); } from { transform: translateY(4px); } }
+  .finding:last-child { border-bottom: none; }
+  .finding-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+    flex-wrap: wrap;
+  }
+  .sev-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .sev-tag.critical { background: rgba(244,63,94,0.15); color: var(--critical); }
+  .sev-tag.high { background: rgba(251,146,60,0.15); color: var(--high); }
+  .sev-tag.medium { background: rgba(251,191,36,0.15); color: var(--medium); }
+  .sev-tag.low { background: rgba(96,165,250,0.15); color: var(--low); }
+  .sev-tag.owasp-tag {
+    background: rgba(247,235,80,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(247,235,80,0.28);
+    cursor: help;
+  }
+  .finding-loc {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  .finding-msg { font-size: 13.5px; color: var(--text); margin-bottom: 4px; }
+  .finding-snippet {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    background: var(--surface-alt);
+    padding: 6px 9px;
+    border-radius: 5px;
+    overflow-x: auto;
+    white-space: pre;
+    margin-bottom: 6px;
+    border-left: 2px solid var(--border);
+  }
+  .finding-fix {
+    font-size: 12.5px;
+    color: var(--accent);
+    display: flex;
+    gap: 6px;
+  }
+  .finding-fix .lbl { color: var(--text-faint); font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; padding-top: 1px; }
+
+  .flow-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .flow-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .flow-graph {
+    overflow-x: auto;
+    margin-bottom: 10px;
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 4px;
+  }
+
+  /* ---------- Score gauge ---------- */
+  .score-box {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .score-ring {
+    --ring-pct: 100;
+    --ring-color: var(--safe);
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: conic-gradient(var(--ring-color) calc(var(--ring-pct) * 1%), var(--surface-alt) 0);
+    transition: background .3s ease;
+  }
+  .score-ring::before {
+    content: "";
+    position: absolute; inset: 4px;
+    border-radius: 50%;
+    background: var(--surface);
+  }
+  .score-ring span {
+    position: relative; z-index: 1;
+    font-family: var(--mono); font-weight: 600; font-size: 15px;
+    color: var(--text);
+  }
+  .score-meta { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .score-grade { font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; }
+  .score-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+  .score-cat-chip {
+    font-family: var(--mono); font-size: 10.5px; color: var(--text-dim);
+    background: var(--surface-alt); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 100px; white-space: nowrap;
+  }
+
+  /* ---------- Vulnerable / fixed code examples ---------- */
+  .finding-example { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+  .ex-row {
+    display: flex; gap: 8px; align-items: flex-start;
+    font-family: var(--mono); font-size: 11.5px;
+    padding: 6px 9px; border-radius: 5px;
+    background: var(--surface-alt);
+  }
+  .ex-row code { white-space: pre-wrap; word-break: break-word; color: var(--text); }
+  .ex-tag { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0; padding-top: 1px; }
+  .ex-row.ex-bad { border-left: 2px solid var(--critical); }
+  .ex-row.ex-bad .ex-tag { color: var(--critical); }
+  .ex-row.ex-good { border-left: 2px solid var(--safe); }
+  .ex-row.ex-good .ex-tag { color: var(--safe); }
+
+  .clean-banner {
+    margin: 18px;
+    padding: 16px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 8px;
+    background: rgba(52,211,153,0.06);
+    color: var(--safe);
+    font-family: var(--mono);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  /* ---------- CI/CD & CLI ---------- */
+  .cicd-intro { max-width: 780px; }
+  .cicd-tabs { display: flex; gap: 6px; margin: 22px 0 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .cicd-tab {
+    background: none; border: none; color: var(--text-dim); font-family: var(--mono); font-size: 12.5px;
+    padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+  }
+  .cicd-tab:hover { color: var(--text); }
+  .cicd-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .cicd-panel { display: none; }
+  .cicd-panel.active { display: block; }
+  .cicd-panel p { color: var(--text-dim); font-size: 13.5px; max-width: 760px; }
+  .code-block {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; margin: 10px 0 18px;
+  }
+  .code-block-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
+  }
+  .code-block-name { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+  .copy-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--accent-dim); }
+  .code-block pre {
+    margin: 0; padding: 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px;
+    line-height: 1.6; color: var(--text);
+  }
+  .cicd-note {
+    font-family: var(--mono); font-size: 12px; color: var(--text-faint);
+    border-left: 2px solid var(--accent-dim); padding: 8px 14px; margin: 4px 0 20px;
+  }
+
+  /* ---------- Roadmap ---------- */
+  .roadmap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 32px 90px;
+  }
+  .roadmap h2 {
+    font-family: var(--mono);
+    font-size: 22px;
+    margin-bottom: 6px;
+  }
+  .roadmap > p {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin: 0 0 30px;
+    max-width: 640px;
+  }
+  .phase-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 900px) { .phase-grid { grid-template-columns: 1fr; } }
+  .phase-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .phase-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 100px;
+    margin-bottom: 14px;
+  }
+  .phase-status.live { background: rgba(52,211,153,0.12); color: var(--safe); }
+  .phase-status.demo { background: rgba(94,234,212,0.12); color: var(--accent); }
+  .phase-status.planned { background: rgba(139,152,165,0.12); color: var(--text-dim); }
+  .phase-card h3 {
+    font-family: var(--mono);
+    font-size: 15px;
+    margin: 0 0 8px;
+  }
+  .phase-card p {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 0;
+  }
+
+  .owasp-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 1100px) { .owasp-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 700px) { .owasp-grid { grid-template-columns: repeat(2, 1fr); } }
+  .owasp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 14px;
+  }
+  .owasp-card.uncovered { opacity: 0.55; }
+  .owasp-code {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+  .owasp-name {
+    font-size: 12.5px;
+    color: var(--text);
+    margin: 5px 0 10px;
+    line-height: 1.35;
+    min-height: 32px;
+  }
+  .owasp-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .owasp-count .n { color: var(--safe); font-weight: 600; }
+  .owasp-card.uncovered .owasp-count .n { color: var(--text-faint); }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 22px 32px;
+    text-align: center;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }
+
+
+
+
+
+  SENTRY SCAN
+  
+    Scan
+    OWASP coverage
+    CI/CD & CLI
+    Roadmap
+  
+
+
+
+  Static analysis · runs entirely in your browser
+  Find the hardcoded secret before it finds production.
+  Paste code, get CWE- and OWASP-mapped findings plus a weighted risk score. No upload, no install.
+
+  
+    118detection rules
+    15vulnerability categories
+    10OWASP Top 10 mapped
+    0bytes leave your browser
+  
+
+  
+    🐍 Python
+    ☕ Java
+    🟨 JavaScript
+    🔷 TypeScript
+    🐹 Go
+    💎 Ruby
+    🐘 PHP
+    ⚙️ C/C++
+  
+
+
+
+  
+    
+      Source input
+      0 lines
+    
+    
+    
+    
+      + Upload file
+      
+      
+      
+      
+        Fail on: High+
+        Fail on: Critical only
+        Fail on: Medium+
+        Fail on: nothing (report only)
+      
+      Run scan
+    
+  
+
+  
+    
+      Findings
+      
+        Idle
+        Cancel
+      
+    
+    
+    
+      100
+      
+        Grade A
+        
+      
+    
+    
+    
+      
+        ●○○
+        No scan run yet.Paste code on the left and click Run scan.
+      
+    
+  
+
+
+
+  Data flow — source to sink
+  Tracks tainted values from a source (user input, request params, stdin) through variable
+    assignments to a dangerous sink within this file. This is a lightweight, best-effort tracker — single file,
+    top-to-bottom, no branches/loops modeled, no cross-function or cross-file tracking. It confirms real chains,
+    it doesn't prove absence of others.
+  
+
+
+
+  OWASP Top 10:2021 coverage
+  Every rule is tagged with a CWE and rolls up into an OWASP Top 10:2021 category by root cause, so a scan doubles as a rough OWASP coverage report. Counts below are live — computed from the rule set actually running above.
+  
+
+
+
+  CI/CD, Docker & CLI
+  
+    The browser tool above is a demo surface for the same engine — this is that engine, ported to Node with no dependencies, so it runs anywhere: a pre-commit hook, a Docker container, or a CI job that fails the build. cli.js is a direct port of the exact rule set, tokenizer, and scoring shown on this page, not a separate reimplementation.
+  
+
+  
+    CLI
+    Docker
+    GitHub Actions
+  
+
+  
+    No dependencies — pure Node.js. Walks a file or directory, skips node_modules/.git/build output, and exits non-zero when a finding at or above --fail-on shows up.
+    
+      install & runCopy
+      npm i -g .                                      # from the cli package dir — installs the `sentry-scan` command
+sentry-scan .                                    # scan cwd, fail build on high/critical (default)
+sentry-scan src/ --fail-on critical              # only fail on critical
+sentry-scan . --format json --fail-on none       # machine-readable, never fail
+sentry-scan . --format sarif -o results.sarif    # SARIF for GitHub/GitLab code scanning
+    
+    
+      sample outputCopy
+      src/app.py
+  [CRITICAL] line 3  secret-generic-assignment  (CWE-798, A07:2021)  risk 7/10
+    Possible hardcoded credential or secret.
+    fix: Load from environment variables or a secrets manager instead of a literal string.
+  [HIGH] line 9  command-injection-os-system  (CWE-78, A03:2021)  risk 4.2/10
+    os.system() called with a dynamically built string.
+    fix: Use subprocess.run([...]) with a list of arguments instead.
+
+Security score: 80/100 (Grade B)
+Total findings: 4
+
+4 finding(s) at or above "high" severity — failing build.  (exit code 1)
+    
+    Full cli.js source, package.json, and this README are provided as a downloadable bundle alongside this page.
+  
+
+  
+    For pipelines that would rather pull a pinned image than check a script into the target repo.
+    
+      DockerfileCopy
+      # Sentry Scan — containerized CLI
+FROM node:20-alpine
+
+WORKDIR /app
+COPY package.json cli.js ./
+RUN chmod +x cli.js
+
+WORKDIR /src
+ENTRYPOINT ["node", "/app/cli.js"]
+CMD ["--help"]
+    
+    
+      build & runCopy
+      docker build -t sentry-scan .
+docker run --rm -v "$(pwd)":/src sentry-scan /src --fail-on high
+    
+  
+
+  
+    Runs on every PR and push to main; uploads a SARIF report so findings show up as inline annotations on the diff, the same way CodeQL results do.
+    
+      .github/workflows/security-scan.ymlCopy
+      name: Sentry Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF for inline PR annotations
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Sentry Scan
+        run: node cli.js . --format sarif --output results.sarif --fail-on high
+        continue-on-error: true   # let the SARIF upload run even if the scan fails the build
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+
+      - name: Fail build on blocking findings
+        run: node cli.js . --fail-on high --format text
+    
+    GitLab CI / Jenkins are the same idea in a different job-runner syntax — the CLI's exit code is the only thing either needs to key off. Swap the two Node steps for docker run ... sentry-scan /src --fail-on high to use the container instead of a checked-in script.
+  
+
+
+
+  Where this fits
+  This page is one piece of a broader rollout — same rule engine as the CI-integrated CLI/Docker tool, brought into a browser so results are shareable with anyone on the team, not just whoever has the terminal open.
+  
+    
+      Phase 1 — live
+      Workflow & deployment
+      CLI + Docker image + GitHub Actions workflow, built and tested — see CI/CD & CLI above. Same rule engine as this page, ported to Node with zero dependencies. GitLab CI / Jenkins are a one-line swap of the run command.
+    
+    
+      Phase 2 — this page
+      Engine & accuracy
+      91 rules across 15 categories, each with a CWE reference, an OWASP Top 10:2021 mapping, a fix-it hint, and vulnerable/fixed code side-by-side. A tokenizer reconstructs multi-line statements and strips comments before matching, and results roll up into a weighted 0–100 security score with a letter grade.
+    
+    
+      Phase 3 — planned
+      Platform & teams
+      Auth, RBAC, scan history, and multi-project dashboards — turning this from a single-page tool into a shared service.
+    
+  
+
+  What's next, in priority order
+  Ranked by how much each closes the gap between "pattern matcher" and a tool teams actually trust in CI.
+  
+    
+      Priority 1
+      Real dataflow / taint tracking
+      The biggest accuracy ceiling isn't more patterns — it's not knowing whether a variable actually traces back to user input. A lightweight taint pass (mark request/argv/env sources, follow assignments, flag when they reach a sink) would cut false positives more than any new rule.
+    
+    
+      Priority 2
+      Full-language AST via a real parser
+      The current tokenizer strips comments and joins multi-line statements, which fixes the worst regex failure modes. A proper parser (e.g. a Python AST via a WASM build, or Babel's AST for JS) would let rules match on call structure and argument position instead of text shape — catching eval(x) passed through a wrapper function, for instance.
+    
+    
+      Priority 3
+      Suppression & baseline files
+      A committed .sentryscan.yml allow-list for accepted-risk findings, so CI fails on new issues instead of every historical one on day one of adoption — the single biggest blocker to teams actually turning on "fail the build."
+    
+    
+      Done
+      SARIF export
+      Shipped as part of Phase 1 — cli.js --format sarif uploads via github/codeql-action/upload-sarif, so findings show up as inline PR annotations instead of only a CLI log.
+    
+    
+      Priority 5
+      Semgrep/CodeQL rule pack import
+      Let the engine consume existing community rule packs rather than hand-writing every pattern — trades some control for much faster coverage growth once the parser (Priority 2) exists to support it.
+    
+    
+      Priority 6
+      Auth, RBAC & scan history
+      Same as Phase 3 above — valuable, but only after the engine itself (accuracy, suppression, CI visibility) is trustworthy enough that people want a shared history of it.
+    
+  
+
+
+Runs client-side only — nothing you paste or upload leaves this page.
+
+
+(function () {
+  "use strict";
+
+  // ---- Rule engine (ported 1:1 from core/scanner.py) ----
+  const RULES = [
+    r("secret-generic-assignment","secrets","critical","medium","CWE-798",
+      /\b\w*(password|passwd|pwd|secret|apikey|api_key|access_token|auth_token)\w*\b\s*(\[\])?\s*[:=]\s*['"][A-Za-z0-9/+_\-.@]{6,}['"]/i,
+      "Possible hardcoded credential or secret.",
+      "Load from environment variables or a secrets manager instead of a literal string."),
+    r("secret-aws-access-key","secrets","critical","high","CWE-798",
+      /\bAKIA[0-9A-Z]{16}\b/,
+      "AWS Access Key ID found in source.",
+      "Revoke this key in IAM immediately, then load credentials via environment variables or an instance/role profile."),
+    r("secret-aws-secret-key","secrets","critical","medium","CWE-798",
+      /aws_secret_access_key\s*[:=]\s*['"][A-Za-z0-9/+=]{40}['"]/i,
+      "AWS Secret Access Key found in source.",
+      "Revoke and rotate this key; use environment variables, IAM roles, or a secrets manager."),
+    r("secret-private-key-block","secrets","critical","high","CWE-798",
+      /-----BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY-----/,
+      "Private key material embedded in source.",
+      "Remove from source control and rotate the key — treat it as compromised."),
+    r("secret-slack-token","secrets","high","high","CWE-798",
+      /\bxox[baprs]-[0-9A-Za-z-]{10,}\b/,
+      "Slack token found in source.",
+      "Revoke the token in Slack app settings and load it from environment variables."),
+    r("secret-jwt-hardcoded","secrets","medium","low","CWE-798",
+      /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+      "Hardcoded JWT-looking token found in source.",
+      "Avoid embedding tokens in source; keep test tokens out of the repo."),
+    r("secret-db-connection-string","secrets","high","medium","CWE-798",
+      /(postgres|postgresql|mysql|mongodb|redis):\/\/[^:\s]+:[^@\s]+@/i,
+      "Database connection string with embedded password.",
+      "Move credentials out of the connection string into environment variables or a config/secrets store."),
+
+    r("sql-injection-string-format","injection","high","medium","CWE-89",
+      /\.execute\s*\(\s*(f['"]|['"].*['"]\s*%|['"].*['"]\s*\+|['"].*\{.*\}.*['"]\.format)/i,
+      "SQL query built via string formatting/concatenation instead of parameters.",
+      "Use parameterized queries — never format/concatenate user input into SQL."),
+    r("command-injection-shell-true","injection","high","high","CWE-78",
+      /subprocess\.(run|call|Popen|check_output)\s*\([^)]*shell\s*=\s*True/i,
+      "Subprocess call with shell=True — risky if any argument includes external input.",
+      "Avoid shell=True; pass the command as a list instead."),
+    r("command-injection-os-system","injection","high","medium","CWE-78",
+      /os\.system\s*\(\s*(f['"]|.*\+|.*%\s*\()/i,
+      "os.system() called with a dynamically built string.",
+      "Use subprocess.run([...]) with a list of arguments instead."),
+    r("command-injection-js-exec","injection","high","medium","CWE-78",
+      /child_process\.(exec|execSync)\s*\(\s*[`'"].*\$\{/i,
+      "Node child_process.exec() called with interpolated input.",
+      "Use execFile/spawn with an argument array instead of building a shell string."),
+    r("code-injection-eval-py","injection","medium","high","CWE-95",
+      /\beval\s*\(/,
+      "Use of eval() can execute arbitrary code if input is attacker-influenced.",
+      "Replace with ast.literal_eval() for literals, or explicit parsing/dispatch logic."),
+    r("code-injection-eval-js","injection","medium","high","CWE-95",
+      /\b(eval|new Function)\s*\(/i,
+      "Use of eval()/Function() can execute arbitrary code.",
+      "Avoid dynamic code execution; use JSON.parse for data or an explicit function map."),
+    r("path-traversal-open-concat","injection","medium","low","CWE-22",
+      /open\s*\(\s*.*(request\.|req\.|params\[|args\[).*\+/i,
+      "File path built by concatenating request-derived input.",
+      "Validate/normalize the path and confirm it resolves inside an allowed base directory before opening."),
+
+    r("weak-hash-md5","crypto","medium","high","CWE-327",
+      /\bhashlib\.md5\s*\(/i,
+      "MD5 is cryptographically broken; unsafe for passwords or integrity checks.",
+      "Use hashlib.sha256 for integrity, or bcrypt/argon2/scrypt for password hashing."),
+    r("weak-hash-sha1","crypto","medium","high","CWE-327",
+      /\bhashlib\.sha1\s*\(/i,
+      "SHA-1 is deprecated for security-sensitive use.",
+      "Use hashlib.sha256 or stronger, or a dedicated password-hashing function."),
+    r("weak-cipher-des","crypto","high","medium","CWE-327",
+      /\bDES\.new\s*\(|Crypto\.Cipher\.DES\b/i,
+      "DES is a broken cipher (56-bit key, considered insecure).",
+      "Use AES-256 (e.g. Crypto.Cipher.AES in GCM mode) instead."),
+    r("insecure-random-for-security","crypto","medium","low","CWE-330",
+      /\brandom\.(random|randint|choice)\s*\(.*\b(token|password|secret|key|otp)\b/i,
+      "Non-cryptographic random() used for a security-sensitive value.",
+      "Use the secrets module (e.g. secrets.token_urlsafe()) for tokens, passwords, or keys."),
+
+    r("unsafe-pickle-load","deserialization","high","medium","CWE-502",
+      /\bpickle\.(load|loads)\s*\(/i,
+      "pickle.load can execute arbitrary code if the data is attacker-controlled.",
+      "Avoid pickle for untrusted data; use json for data interchange."),
+    r("unsafe-yaml-load","deserialization","high","high","CWE-502",
+      /yaml\.load\s*\(\s*[^,)]+\)(?!.*Loader)/i,
+      "yaml.load() without a safe Loader can instantiate arbitrary Python objects.",
+      "Use yaml.safe_load() instead of yaml.load()."),
+
+    r("xss-innerhtml-assignment","xss","medium","medium","CWE-79",
+      /\.innerHTML\s*=\s*[^'"`]/,
+      "Assignment to innerHTML with a non-literal value can enable XSS.",
+      "Use textContent for plain text, or sanitize HTML with DOMPurify before assigning innerHTML."),
+    r("xss-react-dangerously-set-html","xss","medium","medium","CWE-79",
+      /dangerouslySetInnerHTML\s*=\s*\{\{/,
+      "dangerouslySetInnerHTML bypasses React's built-in XSS protection.",
+      "Avoid raw HTML injection; sanitize with DOMPurify if unavoidable."),
+
+    r("debug-mode-enabled-django","misconfig","high","high","CWE-489",
+      /^\s*DEBUG\s*=\s*True\b/im,
+      "Debug mode enabled — can leak stack traces, source, and settings in production.",
+      "Set DEBUG = False in production, driven from an environment variable."),
+    r("debug-mode-enabled-flask","misconfig","high","high","CWE-489",
+      /app\.run\s*\([^)]*debug\s*=\s*True/i,
+      "Flask app run with debug=True — exposes the Werkzeug debugger (RCE risk) if reachable externally.",
+      "Disable debug mode in production; use a proper WSGI server."),
+    r("tls-verification-disabled-py","misconfig","high","high","CWE-295",
+      /requests\.(get|post|put|delete|patch)\s*\([^)]*verify\s*=\s*False/i,
+      "TLS certificate verification disabled — vulnerable to man-in-the-middle attacks.",
+      "Remove verify=False; point verify at a CA bundle path instead."),
+    r("tls-verification-disabled-node","misconfig","high","high","CWE-295",
+      /NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0/,
+      "Node TLS certificate validation disabled globally.",
+      "Remove this setting; configure a custom CA on the specific HTTPS agent instead."),
+    r("cors-wildcard-origin","misconfig","medium","medium","CWE-942",
+      /Access-Control-Allow-Origin['"]?\s*[:=]\s*['"]\*['"]/i,
+      "CORS configured to allow any origin.",
+      "Restrict Access-Control-Allow-Origin to an explicit allow-list of trusted origins."),
+    r("insecure-cookie-flags","misconfig","medium","low","CWE-614",
+      /set_cookie\s*\([^)]*\)(?!.*secure)/i,
+      "Cookie set without visible Secure/HttpOnly flags.",
+      "Set secure=True, httponly=True (and samesite) on session/auth cookies."),
+
+    // ---- C / C++ ----
+    r("c-unsafe-string-function","memory-safety","high","high","CWE-120",
+      /\b(strcpy|strcat|sprintf|gets)\s*\(/,
+      "Unsafe C string function — no bounds checking, classic buffer overflow source.",
+      "Use bounded alternatives: strncpy/strncat/snprintf, or fgets() instead of gets()."),
+    r("c-unbounded-scanf","memory-safety","high","medium","CWE-120",
+      /scanf\s*\([^)]*"[^"]*%(?!\d)[hl]*s/,
+      "scanf() reading a string with %s and no width limit can overflow the destination buffer.",
+      "Specify a width matching the buffer size, e.g. scanf(\"%15s\", buf) for a 16-byte buffer, or use fgets()."),
+    r("c-command-injection-system","injection","critical","high","CWE-78",
+      /\bsystem\s*\(\s*[a-zA-Z_]\w*\s*\)/,
+      "system() called with a variable argument — command injection if that value includes user input.",
+      "Avoid system() with dynamic input; use execve()/exec family with a fixed argument array, and validate/allowlist input."),
+    r("c-format-string-vuln","injection","high","medium","CWE-134",
+      /\bprintf\s*\(\s*[a-zA-Z_]\w*\s*\)/,
+      "printf() called with a variable as the format string — format string vulnerability if attacker-controlled.",
+      "Always use a fixed format string: printf(\"%s\", variable)."),
+    r("c-insecure-random","crypto","medium","low","CWE-330",
+      /\brand\s*\(\s*\)/,
+      "rand() is not cryptographically secure and its output is predictable.",
+      "For security-sensitive values (tokens, OTPs, keys), use a CSPRNG such as arc4random() or getrandom()."),
+
+    // ---- XSS (expanded DOM / framework / server-side sinks) ----
+    r("xss-document-write","xss","medium","medium","CWE-79",
+      /\bdocument\.write(ln)?\s*\(\s*[^'"`)]/,
+      "document.write() called with a non-literal value — can inject attacker-controlled markup into the page.",
+      "Avoid document.write; build DOM nodes with textContent/createElement, or use a templating library that escapes by default.",
+      { bad: "document.write(userBio);", good: "const el = document.createElement('p');\nel.textContent = userBio;\ncontainer.appendChild(el);" }),
+    r("xss-outerhtml-assignment","xss","medium","medium","CWE-79",
+      /\.outerHTML\s*=\s*[^'"`]/,
+      "Assignment to outerHTML with a non-literal value can enable XSS, the same as innerHTML.",
+      "Avoid outerHTML for untrusted content; use textContent, or sanitize with DOMPurify first.",
+      { bad: "el.outerHTML = '<div>' + userInput + '</div>';", good: "el.textContent = userInput;" }),
+    r("xss-insertadjacenthtml","xss","medium","medium","CWE-79",
+      /\.insertAdjacentHTML\s*\(\s*['"][^'"]*['"]\s*,\s*[^'"`]/,
+      "insertAdjacentHTML() called with a non-literal HTML string — a common DOM XSS sink.",
+      "Sanitize with DOMPurify before inserting, or build elements via createElement/textContent.",
+      { bad: "list.insertAdjacentHTML('beforeend', '<li>' + item + '</li>');", good: "const li = document.createElement('li');\nli.textContent = item;\nlist.appendChild(li);" }),
+    r("xss-jquery-html","xss","medium","medium","CWE-79",
+      /\$\([^)]*\)\.html\s*\(\s*[^'"`)]/,
+      "jQuery .html() called with a non-literal value — renders raw HTML without escaping.",
+      "Use .text() for plain text, or sanitize with DOMPurify before calling .html().",
+      { bad: "$('#msg').html(comment.body);", good: "$('#msg').text(comment.body);" }),
+    r("xss-vue-v-html","xss","medium","low","CWE-79",
+      /\bv-html\s*=\s*"[^"]+"/,
+      "v-html renders raw HTML and bypasses Vue's automatic escaping.",
+      "Prefer text interpolation ({{ }}) or bind textContent; if raw HTML is required, sanitize with DOMPurify first.",
+      { bad: '<div v-html="post.bodyHtml"></div>', good: '<div v-html="sanitize(post.bodyHtml)"></div>' }),
+    r("xss-angular-bypass-security-trust","xss","high","high","CWE-79",
+      /bypassSecurityTrust(Html|Script|Style|Url|ResourceUrl)\s*\(/,
+      "Angular DomSanitizer bypass — disables Angular's built-in XSS protection for this value.",
+      "Avoid bypassSecurityTrust*; only use it on values you've explicitly sanitized and fully trust.",
+      { bad: "this.safeHtml = this.sanitizer.bypassSecurityTrustHtml(userComment);", good: "this.safeHtml = DOMPurify.sanitize(userComment);" }),
+    r("xss-django-mark-safe","xss","medium","medium","CWE-79",
+      /\bmark_safe\s*\(/,
+      "Django mark_safe() disables autoescaping for this string — XSS if it contains user input.",
+      "Avoid mark_safe on user-influenced strings; use the |escape filter or format_html() with parameters.",
+      { bad: 'return mark_safe(f"<b>{username}</b>")', good: 'return format_html("<b>{}</b>", username)' }),
+    r("xss-express-reflected","xss","medium","medium","CWE-79",
+      /res\.send\s*\(\s*(`[^`]*\$\{|[^)]*\+\s*req\.(query|params|body))/i,
+      "Express response built by concatenating/interpolating request input directly — reflected XSS if rendered as HTML.",
+      "Set an explicit content type and escape output, or use a templating engine with autoescaping (e.g. res.render).",
+      { bad: "res.send('<h1>Hello ' + req.query.name + '</h1>');", good: "res.render('greeting', { name: req.query.name });" }),
+
+    // ---- Server-side template injection ----
+    r("ssti-flask-render-template-string","injection","high","medium","CWE-1336",
+      /render_template_string\s*\(\s*(f['"]|[^,)]*\+|[^,)]*%\s*\()/i,
+      "Flask render_template_string() built from a dynamic string — server-side template injection if it includes user input.",
+      "Use render_template() with a static template file and pass values as context variables, not string-built templates.",
+      { bad: 'return render_template_string(f"<h1>Hi {name}</h1>")', good: 'return render_template("hi.html", name=name)' }),
+    r("ssti-jinja2-from-string","injection","high","medium","CWE-1336",
+      /\bTemplate\s*\(\s*(f['"]|[^)]*\+|[^)]*request\.)/i,
+      "Jinja2 Template() constructed from a dynamic/user-influenced string — server-side template injection risk.",
+      "Load templates from static files (Environment.get_template) instead of building template source from input.",
+      { bad: "Template(user_supplied_template).render()", good: 'env.get_template("report.html").render(data=data)' }),
+
+    // ---- NoSQL / LDAP injection ----
+    r("nosql-injection-mongo-object","injection","high","medium","CWE-943",
+      /\.find(One)?\s*\(\s*req\.(body|query|params)\s*\)/i,
+      "MongoDB query built directly from an unvalidated request object — operators like $where/$ne can be injected.",
+      "Whitelist and validate expected fields before querying, e.g. { email: req.body.email } rather than the raw object.",
+      { bad: "db.users.findOne(req.body);", good: "db.users.findOne({ email: req.body.email });" }),
+    r("ldap-injection","injection","high","low","CWE-90",
+      /\bldap\.search(_s|_ext)?\s*\([^)]*\+/i,
+      "LDAP search filter built via string concatenation — LDAP injection if any part is user-controlled.",
+      "Escape special filter characters (ldap.filter.escape_filter_chars) before interpolating into the search filter.",
+      { bad: 'conn.search_s(base, ldap.SCOPE_SUBTREE, "(uid=" + username + ")")', good: 'conn.search_s(base, ldap.SCOPE_SUBTREE, "(uid=%s)" % escape_filter_chars(username))' }),
+
+    // ---- SSRF ----
+    r("ssrf-python-requests-dynamic-url","ssrf","high","medium","CWE-918",
+      /requests\.(get|post|put|delete|head)\s*\(\s*(f['"]|[^,)]*\+|[^,)]*req(uest)?\.(args|params|query|GET|POST))/i,
+      "Outbound HTTP request built from user-controlled input — server-side request forgery (SSRF) risk.",
+      "Validate the target against an allow-list of hosts/schemes before fetching; never fetch an arbitrary user-supplied URL server-side.",
+      { bad: 'requests.get(request.args["url"])', good: 'requests.get(validate_allowed_host(request.args["url"]))' }),
+    r("ssrf-node-fetch-dynamic-url","ssrf","high","medium","CWE-918",
+      /\bfetch\s*\(\s*(`[^`]*\$\{|[^)]*req\.(query|params|body))/i,
+      "fetch() called with a request-derived URL — server-side request forgery (SSRF) risk if this runs server-side.",
+      "Resolve the target against an allow-list of known hosts before fetching; reject internal/loopback/metadata addresses.",
+      { bad: "const r = await fetch(req.query.target);", good: "const r = await fetch(assertAllowedUrl(req.query.target));" }),
+
+    // ---- Cross-language deserialization ----
+    r("unsafe-java-objectinputstream","deserialization","high","medium","CWE-502",
+      /new\s+ObjectInputStream\s*\(/,
+      "Java ObjectInputStream can deserialize arbitrary classes — a classic RCE gadget-chain vector for untrusted data.",
+      "Avoid native Java deserialization for untrusted input; use JSON (Jackson/Gson) or an allow-listing ObjectInputFilter.",
+      { bad: "new ObjectInputStream(socket.getInputStream()).readObject();", good: "objectMapper.readValue(socket.getInputStream(), MyDto.class);" }),
+    r("unsafe-php-unserialize","deserialization","high","high","CWE-502",
+      /\bunserialize\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)/i,
+      "PHP unserialize() called directly on request input — can trigger object injection/RCE via crafted payloads.",
+      "Use json_decode() for data interchange instead of unserialize() on untrusted input.",
+      { bad: "$obj = unserialize($_GET['data']);", good: "$obj = json_decode($_GET['data'], true);" }),
+    r("unsafe-ruby-marshal-load","deserialization","high","medium","CWE-502",
+      /Marshal\.load\s*\(/,
+      "Ruby Marshal.load can instantiate arbitrary objects — unsafe on untrusted input, a known RCE vector.",
+      "Use JSON.parse for data interchange, or Marshal.load only on data you generated and control.",
+      { bad: "data = Marshal.load(params[:blob])", good: "data = JSON.parse(params[:blob])" }),
+
+    // ---- Auth / JWT ----
+    r("jwt-alg-none","auth","critical","medium","CWE-347",
+      /alg['"]?\s*:\s*['"]none['"]/i,
+      "JWT configured with alg: 'none' — signature verification is disabled entirely.",
+      "Never accept 'none' as a valid algorithm; explicitly whitelist an expected signing algorithm (e.g. RS256/HS256).",
+      { bad: "jwt.sign(payload, '', { algorithm: 'none' })", good: "jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256' })" }),
+    r("jwt-verify-disabled","auth","critical","high","CWE-347",
+      /jwt\.decode\s*\([^)]*(verify_signature|verify)['"]?\s*[:=]\s*False/i,
+      "JWT decoded with verify=False — the token's signature is never checked, so it can be forged.",
+      "Remove verify=False; always verify the signature with the expected algorithm and key.",
+      { bad: 'jwt.decode(token, options={"verify_signature": False})', good: 'jwt.decode(token, key, algorithms=["HS256"])' }),
+    r("hardcoded-jwt-secret","auth","high","low","CWE-798",
+      /jwt\.sign\s*\(\s*[^,]+,\s*['"][^'"]{4,}['"]/i,
+      "JWT signed with a secret that appears to be a hardcoded literal rather than a config/env value.",
+      "Load the signing secret from an environment variable or secrets manager, and use a long, random value.",
+      { bad: "jwt.sign(payload, 'my-secret-key')", good: "jwt.sign(payload, process.env.JWT_SECRET)" }),
+
+    // ---- Crypto ----
+    r("hardcoded-iv-crypto","crypto","medium","low","CWE-329",
+      /\biv\s*=\s*b?['"][0-9a-fA-F]{16,}['"]/i,
+      "Static/hardcoded IV used for encryption — reusing an IV across messages can leak plaintext patterns or enable replay.",
+      "Generate a fresh cryptographically random IV per encryption call (e.g. os.urandom(16)) and store it alongside the ciphertext.",
+      { bad: 'iv = b"0000000000000000"', good: "iv = os.urandom(16)" }),
+
+    // ---- Denial of service ----
+    r("redos-nested-quantifier","dos","medium","low","CWE-1333",
+      /\([^()]*[+*][^()]*\)[+*]/,
+      "Regex contains a nested quantifier pattern (e.g. (a+)+) that can cause catastrophic backtracking — a ReDoS risk on attacker-controlled input.",
+      "Rewrite to avoid nested repetition, or use a regex engine with linear-time guarantees (e.g. RE2).",
+      { bad: "/^(a+)+$/", good: "/^a+$/" }),
+
+    // ---- Access control / misconfig ----
+    r("open-redirect-unvalidated","misconfig","medium","medium","CWE-601",
+      /redirect\s*\(\s*(request\.(GET|args)\[|req\.query\.|req\.params\.)/i,
+      "Redirect target taken directly from request input without validation — open redirect risk.",
+      "Validate the destination against an allow-list of relative paths/known hosts before redirecting.",
+      { bad: 'return redirect(request.args["next"])', good: 'return redirect(next_url if next_url in ALLOWED_PATHS else "/")' }),
+    r("unrestricted-file-upload","misconfig","medium","low","CWE-434",
+      /request\.files\[[^\]]+\]\.save\s*\(/i,
+      "Uploaded file saved without visible extension/content-type validation.",
+      "Validate file extension and content type against an allow-list, and store uploads outside the web root with a generated filename.",
+      { bad: "request.files['f'].save(os.path.join(UPLOAD_DIR, request.files['f'].filename))", good: "request.files['f'].save(os.path.join(UPLOAD_DIR, safe_random_name(ext)))" }),
+    r("mass-assignment-orm","misconfig","medium","medium","CWE-915",
+      /\.create\s*\(\s*\*\*request\.(POST|data|json)\)|update_attributes\s*\(\s*params\[/i,
+      "Model created/updated directly from raw request data — mass assignment can let callers set fields they shouldn't (e.g. is_admin).",
+      "Explicitly whitelist the fields you accept instead of passing the whole request payload into the model.",
+      { bad: "User.objects.create(**request.data)", good: 'User.objects.create(email=request.data["email"], name=request.data["name"])' }),
+
+    // ---- XSS (expanded: template/legacy sinks, server templating, SVG) ----
+    r("xss-settimeout-string-arg","xss","medium","medium","CWE-79",
+      /\bset(Timeout|Interval)\s*\(\s*(['"`][^'"`]*\$\{|['"][^'"]*['"]\s*\+)/,
+      "setTimeout/setInterval called with a dynamically built string — the string is implicitly eval'd, same risk as eval().",
+      "Pass a function reference/closure instead of a string: setTimeout(() => doThing(value), ms).",
+      { bad: 'setTimeout("go(" + userInput + ")", 100);', good: "setTimeout(() => go(userInput), 100);" }),
+    r("xss-php-echo-superglobal","xss","high","medium","CWE-79",
+      /\becho\s+\$_(GET|POST|REQUEST)\[/i,
+      "PHP superglobal echoed directly into the response without escaping — reflected XSS.",
+      "Escape with htmlspecialchars($val, ENT_QUOTES, 'UTF-8') before output, or use a templating engine that autoescapes.",
+      { bad: "echo $_GET['name'];", good: "echo htmlspecialchars($_GET['name'], ENT_QUOTES, 'UTF-8');" }),
+    r("xss-jsp-expression-request-param","xss","high","medium","CWE-79",
+      /<%=\s*request\.getParameter\(/,
+      "JSP expression outputs a request parameter directly without escaping — classic reflected XSS.",
+      "Use JSTL <c:out value=\"${param.x}\"/> (escapes by default) instead of a raw scriptlet expression.",
+      { bad: '<%= request.getParameter("q") %>', good: '<c:out value="${param.q}"/>' }),
+    r("xss-aspnet-response-write","xss","high","medium","CWE-79",
+      /Response\.Write\s*\(\s*Request\./i,
+      "ASP/ASP.NET Response.Write() outputs request data directly — reflected XSS if rendered as HTML.",
+      "HTML-encode with Server.HtmlEncode()/HttpUtility.HtmlEncode() before writing, or bind via a Razor view (auto-encodes).",
+      { bad: 'Response.Write(Request.QueryString["name"]);', good: 'Response.Write(Server.HtmlEncode(Request.QueryString["name"]));' }),
+    r("xss-svg-onload-payload","xss","medium","medium","CWE-79",
+      /<svg[^>]*\bonload\s*=/i,
+      "Inline SVG markup includes an onload event handler — if this template ever receives user-supplied SVG/markup, it's a self-executing XSS payload.",
+      "Sanitize any user-supplied SVG/markup with an allow-list sanitizer (e.g. DOMPurify with SVG profile) before rendering, and serve untrusted SVG uploads with a non-HTML content type.",
+      { bad: '<svg onload="alert(1)">', good: '<img src="logo.svg" alt="logo">' }),
+    r("xss-angular-innerhtml-binding","xss","low","medium","CWE-79",
+      /\[innerHTML\]\s*=\s*"/,
+      "Angular [innerHTML] property binding — Angular sanitizes this by default, but any bypassSecurityTrustHtml upstream or a future Angular change re-opens XSS here.",
+      "Prefer text interpolation ({{ }}) when raw HTML isn't required; if it is, keep the value passed through Angular's DomSanitizer and avoid bypassSecurityTrust*.",
+      { bad: '<div [innerHTML]="comment.body"></div>', good: '<div>{{ comment.body }}</div>' }),
+
+    // ---- SQL injection (expanded: Java/PHP/.NET/Django/Node/Ruby/Go) ----
+    r("sql-injection-java-statement-concat","injection","critical","medium","CWE-89",
+      /\.execute(Query|Update)?\s*\(\s*"[^"]*"\s*\+/,
+      "Java Statement executed with a concatenated string — classic SQL injection; use PreparedStatement instead.",
+      "Switch to PreparedStatement with parameter placeholders (?) and setX() binding, never string-build the query.",
+      { bad: 'stmt.executeQuery("SELECT * FROM users WHERE id=" + id);', good: 'PreparedStatement p = conn.prepareStatement("SELECT * FROM users WHERE id=?"); p.setInt(1, id);' }),
+    r("sql-injection-php-mysqli-concat","injection","critical","high","CWE-89",
+      /mysqli_query\s*\([^)]*\.\s*\$_(GET|POST|REQUEST|COOKIE)/i,
+      "mysqli_query() built by concatenating a superglobal directly into the SQL string.",
+      "Use a prepared statement with bind_param() instead of concatenating request input into the query.",
+      { bad: "mysqli_query($conn, \"SELECT * FROM users WHERE id=\" . $_GET['id']);", good: "$stmt = $conn->prepare('SELECT * FROM users WHERE id=?'); $stmt->bind_param('i', $_GET['id']); $stmt->execute();" }),
+    r("sql-injection-php-pdo-query-concat","injection","critical","medium","CWE-89",
+      /->query\s*\(\s*["'][^"']*["']\s*\./,
+      "PDO ->query() called with a concatenated string instead of ->prepare()/->execute() with bound parameters.",
+      "Use $pdo->prepare('... WHERE id=?') and ->execute([$id]) rather than building the SQL string.",
+      { bad: "$pdo->query('SELECT * FROM users WHERE id=' . $id);", good: "$stmt = $pdo->prepare('SELECT * FROM users WHERE id=?'); $stmt->execute([$id]);" }),
+    r("sql-injection-csharp-sqlcommand-concat","injection","critical","medium","CWE-89",
+      /new\s+SqlCommand\s*\(\s*["'][^"']*["']\s*\+/,
+      "SqlCommand constructed with a concatenated string — SQL injection risk.",
+      "Use parameterized SqlCommand text (@id) with SqlParameter/Parameters.AddWithValue instead of concatenation.",
+      { bad: 'new SqlCommand("SELECT * FROM users WHERE id=" + id, conn);', good: 'new SqlCommand("SELECT * FROM users WHERE id=@id", conn); cmd.Parameters.AddWithValue("@id", id);' }),
+    r("sql-injection-django-raw","injection","high","medium","CWE-89",
+      /\.raw\s*\(\s*(f['"]|['"][^'"]*['"]\s*%|['"][^'"]*['"]\s*\+)/,
+      "Django QuerySet.raw() built via an f-string/format/concatenation — bypasses the ORM's parameterization.",
+      "Pass values as the params list argument: Model.objects.raw('... WHERE id=%s', [user_id]), never interpolate into the SQL string.",
+      { bad: 'User.objects.raw(f"SELECT * FROM users WHERE id={user_id}")', good: 'User.objects.raw("SELECT * FROM users WHERE id=%s", [user_id])' }),
+    r("sql-injection-node-db-query-concat","injection","high","medium","CWE-89",
+      /\.query\s*\(\s*(`[^`]*\$\{|['"][^'"]*['"]\s*\+)/,
+      "Database .query() called with a template literal or concatenated string — SQL injection risk (pg/mysql/mysql2/etc).",
+      "Use parameterized placeholders ($1/? ) with a values array instead of interpolating into the query string.",
+      { bad: "db.query(`SELECT * FROM users WHERE id=${id}`);", good: "db.query('SELECT * FROM users WHERE id=$1', [id]);" }),
+    r("sql-injection-ruby-activerecord-interp","injection","high","medium","CWE-89",
+      /\.where\s*\(\s*"[^"]*#\{/,
+      "ActiveRecord .where() built with string interpolation — bypasses Rails' automatic parameter binding.",
+      "Use hash conditions or a placeholder string: .where(name: params[:name]) or .where('name = ?', params[:name]).",
+      { bad: 'User.where("name = \'#{params[:name]}\'")', good: "User.where(name: params[:name])" }),
+    r("sql-injection-go-sprintf-query","injection","high","medium","CWE-89",
+      /db\.(Query|Exec|QueryRow)\s*\(\s*fmt\.Sprintf\(/,
+      "Go database/sql call built with fmt.Sprintf() — the query text itself is being string-formatted instead of parameterized.",
+      "Use placeholder parameters: db.Query(\"SELECT * FROM users WHERE id=$1\", id) and let the driver bind the value.",
+      { bad: 'db.Query(fmt.Sprintf("SELECT * FROM users WHERE id=%s", id))', good: 'db.Query("SELECT * FROM users WHERE id=$1", id)' }),
+
+    // ---- Command injection (expanded: Java/PHP/Ruby/Go/PowerShell) ----
+    r("command-injection-java-runtime-exec","injection","critical","medium","CWE-78",
+      /Runtime\.getRuntime\(\)\.exec\s*\(\s*"[^"]*"\s*\+/,
+      "Runtime.exec() called with a concatenated command string — command injection if any part is attacker-influenced.",
+      "Pass the command and arguments as a String[] array (no shell involved), and validate each argument.",
+      { bad: 'Runtime.getRuntime().exec("ping " + host);', good: 'Runtime.getRuntime().exec(new String[]{"ping", host});' }),
+    r("command-injection-processbuilder-shell","injection","high","high","CWE-78",
+      /new\s+ProcessBuilder\s*\(\s*["'](\/bin\/)?(ba)?sh["']\s*,\s*["']-c["']/i,
+      "ProcessBuilder invoked via a shell (sh -c) — any interpolated value is parsed by the shell, enabling command injection.",
+      "Invoke the target binary directly with an argument array instead of routing through sh -c.",
+      { bad: 'new ProcessBuilder("/bin/sh", "-c", cmd);', good: 'new ProcessBuilder("myTool", arg1, arg2);' }),
+    r("command-injection-php-shell","injection","critical","high","CWE-78",
+      /\b(exec|shell_exec|system|passthru|popen|proc_open)\s*\(\s*[^)]*\$_(GET|POST|REQUEST|COOKIE)/i,
+      "PHP shell function called with a superglobal directly — command injection.",
+      "Avoid passing request input to shell functions; if unavoidable, validate against a strict allow-list and wrap arguments with escapeshellarg().",
+      { bad: "system($_GET['cmd']);", good: "$allowed = ['status', 'restart']; if (in_array($_GET['cmd'], $allowed, true)) system(escapeshellcmd($_GET['cmd']));" }),
+    r("command-injection-ruby-backticks","injection","high","medium","CWE-78",
+      /`[^`\n]*#\{[^}]*\}[^`\n]*`/,
+      "Ruby backtick shell execution with string interpolation — command injection if the interpolated value is attacker-influenced.",
+      "Use system()/Open3.capture2() with an argument array instead of an interpolated backtick string.",
+      { bad: '`ping #{host}`', good: "system('ping', host)" }),
+    r("command-injection-ruby-percent-x","injection","high","medium","CWE-78",
+      /%x[\{\(\[][^}\)\]]*#\{/,
+      "Ruby %x{} shell execution with string interpolation — command injection if the interpolated value is attacker-influenced.",
+      "Use system()/Open3.capture2() with an argument array instead of an interpolated %x{} string.",
+      { bad: '%x{ping #{host}}', good: "system('ping', host)" }),
+    r("command-injection-go-exec-command-shell","injection","high","high","CWE-78",
+      /exec\.Command\s*\(\s*"(sh|bash|cmd|cmd\.exe)"\s*,\s*"(-c|\/c)"/i,
+      "Go exec.Command() invoked via a shell (sh -c / cmd /c) — any interpolated argument is parsed by the shell.",
+      "Call the target binary directly with its arguments as separate exec.Command() parameters, bypassing the shell.",
+      { bad: 'exec.Command("sh", "-c", cmd)', good: 'exec.Command("ping", host)' }),
+    r("command-injection-powershell-invoke-expression","injection","critical","medium","CWE-78",
+      /\b(Invoke-Expression|iex)\s*\(?\s*\$/i,
+      "PowerShell Invoke-Expression (iex) run against a variable — evaluates arbitrary input as code/commands.",
+      "Avoid Invoke-Expression on external input; call cmdlets/executables directly with typed, validated parameters.",
+      { bad: "Invoke-Expression $userInput", good: "& $trustedScriptPath -Arg $validatedArg" }),
+
+    // ---- XXE (XML External Entity) ----
+    r("xxe-java-dbf-newinstance","xxe","medium","low","CWE-611",
+      /DocumentBuilderFactory\.newInstance\s*\(\s*\)/,
+      "XML parser created via DocumentBuilderFactory — verify DOCTYPE/external entity resolution is disabled, or this is XXE-exploitable on untrusted XML.",
+      "Call setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true) (or disable external general/parameter entities) right after creating the factory.",
+      { bad: "DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();", good: "dbf.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);" }),
+    r("xxe-python-lxml-resolve-entities","xxe","critical","high","CWE-611",
+      /(etree\.(parse|fromstring)\s*\([^)]*resolve_entities\s*=\s*True|XMLParser\s*\([^)]*resolve_entities\s*=\s*True)/,
+      "lxml parser explicitly configured with resolve_entities=True — enables XXE on untrusted XML input.",
+      "Use resolve_entities=False (the safer default) and no_network=True; only enable entity resolution for fully trusted, internal XML.",
+      { bad: "etree.fromstring(xml_data, parser=etree.XMLParser(resolve_entities=True))", good: "etree.fromstring(xml_data, parser=etree.XMLParser(resolve_entities=False, no_network=True))" }),
+    r("xxe-php-libxml-entity-loader","xxe","critical","high","CWE-611",
+      /(libxml_disable_entity_loader\s*\(\s*false\s*\)|simplexml_load_string\s*\([^)]*LIBXML_NOENT)/i,
+      "PHP libxml entity loading explicitly re-enabled (or LIBXML_NOENT used) — exposes XXE on untrusted XML.",
+      "Leave entity loading disabled (the default since PHP 8) and avoid LIBXML_NOENT when parsing untrusted XML.",
+      { bad: "libxml_disable_entity_loader(false);", good: "// leave entity loading disabled (PHP 8+ default)" }),
+    r("xxe-dotnet-xmlurlresolver","xxe","high","medium","CWE-611",
+      /XmlResolver\s*=\s*new\s+XmlUrlResolver/,
+      ".NET XmlDocument/XmlReader given a live XmlUrlResolver — allows external entity/DTD resolution, enabling XXE.",
+      "Set XmlResolver = null (or omit it — null is the safe default in modern .NET) when parsing untrusted XML.",
+      { bad: "xmlDocument.XmlResolver = new XmlUrlResolver();", good: "xmlDocument.XmlResolver = null;" }),
+
+    // ---- SSRF (expanded) ----
+    r("ssrf-cloud-metadata-endpoint","ssrf","medium","medium","CWE-918",
+      /169\.254\.169\.254/,
+      "Reference to the cloud instance metadata endpoint (169.254.169.254) — if this is reachable via an attacker-influenced request path (SSRF), it can leak instance credentials/role tokens.",
+      "Block egress to 169.254.169.254 from any code path that touches user-supplied URLs, and prefer IMDSv2/hop-limit protections where applicable.",
+      { bad: 'requests.get("http://169.254.169.254/latest/meta-data/")', good: "// restrict metadata access to trusted, non-request-driven code paths only" }),
+    r("ssrf-java-url-request-param","ssrf","high","medium","CWE-918",
+      /new\s+URL\s*\(\s*[a-zA-Z_]*[Rr]equest[a-zA-Z_]*\.getParameter/,
+      "java.net.URL constructed directly from a request parameter, then presumably fetched — SSRF risk.",
+      "Validate the target host/scheme against an allow-list before opening the connection; reject internal/loopback/link-local addresses.",
+      { bad: 'new URL(request.getParameter("url")).openStream();', good: 'new URL(validateAllowedHost(request.getParameter("url"))).openStream();' }),
+    r("ssrf-php-curl-dynamic-url","ssrf","high","medium","CWE-918",
+      /curl_setopt\s*\(\s*\$\w+\s*,\s*CURLOPT_URL\s*,\s*\$_(GET|POST|REQUEST)/i,
+      "curl CURLOPT_URL set directly from request input — server-side request forgery risk.",
+      "Validate the target against an allow-list of hosts/schemes before setting CURLOPT_URL, and disable redirects (CURLOPT_FOLLOWLOCATION) or re-validate on redirect.",
+      { bad: "curl_setopt($ch, CURLOPT_URL, $_GET['url']);", good: "curl_setopt($ch, CURLOPT_URL, validate_allowed_host($_GET['url']));" }),
+
+    // ---- Prototype pollution (JS/Node) ----
+    r("proto-pollution-lodash-merge","proto-pollution","high","medium","CWE-1321",
+      /_\.(merge|merged|defaultsDeep|assignIn)\s*\(\s*[^,]+,\s*(req\.body|req\.query|req\.params)/,
+      "lodash merge/defaultsDeep called with raw request data as the source — a crafted __proto__/constructor.prototype key can pollute the object prototype.",
+      "Whitelist the fields you accept (e.g. _.pick(req.body, ALLOWED_KEYS)) before merging, or use a merge utility that ignores __proto__/constructor keys.",
+      { bad: "_.merge(config, req.body);", good: "_.merge(config, _.pick(req.body, ALLOWED_KEYS));" }),
+    r("proto-pollution-bracket-key-assign","proto-pollution","medium","low","CWE-1321",
+      /\[\s*(req\.body\.\w+|req\.params\.\w+|req\.query\.\w+)\s*\]\s*=/,
+      "Object property assigned using a request-derived key in bracket notation — if the key isn't validated, __proto__/constructor/prototype can be targeted for prototype pollution.",
+      "Validate the key against an explicit allow-list (or reject __proto__/constructor/prototype) before using it as a dynamic property name.",
+      { bad: "obj[req.body.key] = req.body.value;", good: "const key = ALLOWED_KEYS.includes(req.body.key) ? req.body.key : null; if (key) safeSet(obj, key, req.body.value);" }),
+
+    // ---- Access control / CSRF ----
+    r("csrf-flask-exempt","csrf","medium","high","CWE-352",
+      /@csrf_exempt/,
+      "CSRF protection explicitly disabled for this view — a state-changing endpoint left unprotected is forgeable from another origin.",
+      "Remove @csrf_exempt unless this endpoint is verified to be safe by another mechanism (e.g. a verified API token), and document why.",
+      { bad: "@csrf_exempt\ndef transfer_funds(request):", good: "def transfer_funds(request):  # CSRF protection stays enabled" }),
+    r("access-control-privilege-from-request","access-control","critical","medium","CWE-639",
+      /is_admin\s*=\s*(request\.|req\.)(GET|POST|body|query|params)/i,
+      "Privilege/role flag assigned directly from request input — a client can grant themselves elevated privileges by sending that field.",
+      "Never trust client-supplied privilege fields; set roles only from server-side logic (e.g. an admin-only internal action) after an authorization check.",
+      { bad: "user.is_admin = request.POST['is_admin']", good: "user.is_admin = False  # role changes go through a dedicated, authorized admin action" }),
+
+    // ---- Logging / monitoring ----
+    r("logging-sensitive-data","logging","medium","low","CWE-532",
+      /log(ger)?\.(info|debug|warn|error)\s*\([^)]*\b(password|ssn|credit_card|creditcard|auth_token)\b/i,
+      "Sensitive-looking value appears to be written to application logs in plaintext — logs are typically retained longer and accessed by more people than the primary datastore.",
+      "Redact or omit sensitive fields before logging (log a masked value or an identifier instead of the raw secret).",
+      { bad: 'logger.info("login attempt password=" + password);', good: 'logger.info("login attempt for user=" + username);' }),
+
+    // ---- Java: crypto / TLS / CSRF gaps ----
+    r("java-weak-hash-md5","crypto","medium","high","CWE-327",
+      /MessageDigest\.getInstance\s*\(\s*["']MD5["']\s*\)/i,
+      "MD5 is cryptographically broken; unsafe for passwords or integrity checks.",
+      "Use SHA-256 (MessageDigest.getInstance(\"SHA-256\")), or BCrypt/Argon2 specifically for password hashing.",
+      { bad: 'MessageDigest.getInstance("MD5")', good: 'MessageDigest.getInstance("SHA-256") // or BCrypt for passwords' }),
+    r("java-weak-cipher-des","crypto","high","high","CWE-327",
+      /Cipher\.getInstance\s*\(\s*["']DES/i,
+      "DES is a broken cipher (56-bit key), considered insecure for any use.",
+      "Use AES-256 in an authenticated mode: Cipher.getInstance(\"AES/GCM/NoPadding\").",
+      { bad: 'Cipher.getInstance("DES/ECB/PKCS5Padding")', good: 'Cipher.getInstance("AES/GCM/NoPadding")' }),
+    r("java-insecure-random","crypto","medium","medium","CWE-330",
+      /\b(token|otp|session|secret)\w*\s*=[^;]*\bnew Random\s*\(/i,
+      "java.util.Random is not cryptographically secure — its output is predictable given enough samples.",
+      "Use java.security.SecureRandom for tokens, session IDs, password reset codes, or any security-sensitive value.",
+      { bad: "String token = new Random().nextInt() + \"\";", good: "String token = new SecureRandom().generateSeed(32).toString();" }),
+    r("java-tls-hostname-verification-bypass","misconfig","critical","high","CWE-295",
+      /ALLOW_ALL_HOSTNAME_VERIFIER|setDefaultHostnameVerifier\s*\(\s*\([^)]*\)\s*->\s*true/,
+      "TLS hostname verification disabled or bypassed — vulnerable to man-in-the-middle attacks.",
+      "Remove the always-true verifier; rely on the default hostname verification, or write a correctly scoped custom check.",
+      { bad: "HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);", good: "// use the default verifier — don't override it" }),
+    r("java-spring-csrf-disabled","csrf","high","high","CWE-352",
+      /\.csrf\(\)\.disable\(\)|\.csrf\(\s*csrf\s*->\s*csrf\.disable\(\)\s*\)/,
+      "Spring Security CSRF protection explicitly disabled.",
+      "Remove .csrf().disable() unless this is a stateless token-authenticated API with no cookie-based session — then document why.",
+      { bad: "http.csrf().disable();", good: "http.csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()));" }),
+
+    // ---- Go: crypto / TLS / path traversal gaps ----
+    r("go-weak-hash-md5","crypto","medium","high","CWE-327",
+      /\bmd5\.(New|Sum)\s*\(/,
+      "MD5 is cryptographically broken; unsafe for passwords or integrity checks.",
+      "Use crypto/sha256, or golang.org/x/crypto/bcrypt specifically for password hashing.",
+      { bad: "h := md5.New()", good: "h := sha256.New() // or bcrypt.GenerateFromPassword for passwords" }),
+    r("go-weak-hash-sha1","crypto","medium","high","CWE-327",
+      /\bsha1\.(New|Sum)\s*\(/,
+      "SHA-1 is deprecated for security-sensitive use (collision attacks are practical).",
+      "Use crypto/sha256 or stronger.",
+      { bad: "h := sha1.New()", good: "h := sha256.New()" }),
+    r("go-insecure-random","crypto","medium","medium","CWE-330",
+      /\b(token|otp|session|secret)\w*\s*[:=]{1,2}[^;\n]*math\/rand|\bmath\/rand.*\b(token|otp|session|secret)\b/i,
+      "math/rand is not cryptographically secure — seed and output are predictable.",
+      "Use crypto/rand for tokens, session IDs, or any security-sensitive value.",
+      { bad: 'token := strconv.Itoa(mathrand.Intn(1000000)) // math/rand', good: "b := make([]byte, 32); cryptorand.Read(b) // crypto/rand" }),
+    r("go-tls-insecure-skip-verify","misconfig","critical","high","CWE-295",
+      /InsecureSkipVerify\s*:\s*true/,
+      "TLS certificate verification disabled — vulnerable to man-in-the-middle attacks.",
+      "Remove InsecureSkipVerify: true; if using an internal CA, configure RootCAs with the CA certificate instead.",
+      { bad: "tls.Config{InsecureSkipVerify: true}", good: "tls.Config{RootCAs: internalCAPool}" }),
+    r("go-path-traversal-os-open","injection","medium","low","CWE-22",
+      /os\.(Open|ReadFile|Create)\s*\(\s*.*(r\.URL\.Query|r\.FormValue|c\.Param)/i,
+      "File path built directly from request input — path traversal risk.",
+      "Use filepath.Clean and verify the resolved path stays inside an allowed base directory before opening.",
+      { bad: 'os.Open(r.URL.Query().Get("file"))', good: "// validate against an allowlist / confirm path is inside baseDir after filepath.Clean" }),
+
+    // ---- PHP: eval / LFI / weak crypto gaps ----
+    r("php-eval-usage","injection","critical","high","CWE-95",
+      /\beval\s*\(/,
+      "eval() executes a string as PHP code — arbitrary code execution if any part is attacker-influenced.",
+      "Avoid eval() entirely; use explicit parsing or a safe expression evaluator library instead.",
+      { bad: "eval($_GET['code']);", good: "// never eval user input; use a defined, safe operation instead" }),
+    r("php-file-inclusion-lfi","injection","critical","high","CWE-98",
+      /\b(include|include_once|require|require_once)\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)/i,
+      "File to include is taken directly from request input — local/remote file inclusion risk.",
+      "Never pass request input directly to include/require; map to an allowlist of known file identifiers instead.",
+      { bad: "include($_GET['page'] . '.php');", good: "$allowed = ['home','about']; if (in_array($_GET['page'], $allowed, true)) include($_GET['page'] . '.php');" }),
+    r("php-weak-hash-md5-password","crypto","high","medium","CWE-327",
+      /md5\s*\([^)]*\bpass(word)?\b/i,
+      "MD5 used to hash a password — fast, unsalted, and broken for this purpose.",
+      "Use password_hash() with PASSWORD_BCRYPT or PASSWORD_ARGON2ID, and password_verify() to check it.",
+      { bad: "$hash = md5($password);", good: "$hash = password_hash($password, PASSWORD_ARGON2ID);" }),
+    r("php-insecure-random","crypto","medium","low","CWE-330",
+      /\$\w+\s*=\s*(rand|mt_rand)\s*\(/,
+      "rand()/mt_rand() are not cryptographically secure and are predictable.",
+      "Use random_bytes() or random_int() for tokens, passwords, or session identifiers.",
+      { bad: "$token = mt_rand();", good: "$token = bin2hex(random_bytes(16));" }),
+    r("php-extract-variable-injection","injection","high","medium","CWE-621",
+      /\bextract\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)/i,
+      "extract() on request data creates variables named by attacker-controlled keys, which can overwrite existing variables.",
+      "Never extract() request superglobals directly; access needed fields explicitly by name instead.",
+      { bad: "extract($_GET);", good: "$id = $_GET['id'] ?? null; // access fields explicitly" }),
+
+    // ---- Ruby: eval / weak crypto / insecure random ----
+    r("ruby-eval-usage","injection","critical","high","CWE-95",
+      /\beval\s*\(/,
+      "eval() executes a string as Ruby code — arbitrary code execution if any part is attacker-influenced.",
+      "Avoid eval() entirely; use an explicit, safe operation instead of evaluating dynamic strings.",
+      { bad: "eval(params[:expr])", good: "# never eval user input; dispatch to a fixed, known operation instead" }),
+    r("ruby-weak-hash-md5","crypto","medium","high","CWE-327",
+      /Digest::MD5/,
+      "MD5 is cryptographically broken; unsafe for passwords or integrity checks.",
+      "Use Digest::SHA256, or bcrypt specifically for password hashing.",
+      { bad: "Digest::MD5.hexdigest(password)", good: "BCrypt::Password.create(password)" }),
+    r("ruby-insecure-random","crypto","medium","medium","CWE-330",
+      /\b(token|otp|session|secret)\w*\s*=[^\n]*\brand\s*\(/i,
+      "Kernel#rand is not cryptographically secure and is predictable.",
+      "Use SecureRandom (e.g. SecureRandom.hex(16)) for tokens, session IDs, or any security-sensitive value.",
+      { bad: "token = rand(1000000)", good: "token = SecureRandom.hex(16)" }),
+
+    // ---- C#: crypto / deserialization / TLS gaps ----
+    r("csharp-weak-hash-md5","crypto","medium","high","CWE-327",
+      /MD5\.(Create|CryptoServiceProvider)/,
+      "MD5 is cryptographically broken; unsafe for passwords or integrity checks.",
+      "Use SHA256.Create(), or a password-hashing function like PBKDF2/BCrypt for passwords.",
+      { bad: "using var md5 = MD5.Create();", good: "using var sha256 = SHA256.Create(); // or Rfc2898DeriveBytes for passwords" }),
+    r("csharp-weak-cipher-des","crypto","high","high","CWE-327",
+      /DESCryptoServiceProvider|TripleDESCryptoServiceProvider/,
+      "DES/3DES are broken/deprecated ciphers.",
+      "Use Aes.Create() with GCM mode instead.",
+      { bad: "var des = new DESCryptoServiceProvider();", good: "using var aes = Aes.Create();" }),
+    r("csharp-insecure-deserialization-binaryformatter","deserialization","critical","high","CWE-502",
+      /new\s+BinaryFormatter\s*\(\s*\)|BinaryFormatter\s*\(\s*\)\.Deserialize/,
+      "BinaryFormatter can execute arbitrary code during deserialization of untrusted data — Microsoft has deprecated it for this reason.",
+      "Avoid BinaryFormatter entirely for untrusted data; use System.Text.Json or a schema-validated format instead.",
+      { bad: "new BinaryFormatter().Deserialize(stream);", good: "JsonSerializer.Deserialize<MyType>(jsonString);" }),
+    r("csharp-insecure-random","crypto","medium","medium","CWE-330",
+      /\b(token|otp|session|secret)\w*\s*=[^;]*\bnew Random\s*\(/i,
+      "System.Random is not cryptographically secure and is predictable.",
+      "Use System.Security.Cryptography.RandomNumberGenerator for tokens or any security-sensitive value.",
+      { bad: "var token = new Random().Next().ToString();", good: "var bytes = RandomNumberGenerator.GetBytes(32);" }),
+    r("csharp-tls-certificate-validation-bypass","misconfig","critical","high","CWE-295",
+      /ServerCertificateValidationCallback\s*=.*=>\s*true|ServerCertificateValidationCallback\s*=\s*delegate\s*\{?\s*return\s+true/,
+      "TLS certificate validation callback always returns true — disables certificate checking entirely.",
+      "Remove the always-true callback; validate the certificate chain properly, or pin the expected certificate if needed.",
+      { bad: "ServicePointManager.ServerCertificateValidationCallback = (s,c,ch,e) => true;", good: "// don't override the callback — use default validation, or validate the chain correctly" }),
+
+    // ---- Rust ----
+    r("rust-command-injection-shell","injection","critical","high","CWE-78",
+      /Command::new\s*\(\s*["'](sh|bash|cmd|powershell)["']\s*\)\s*\.arg\s*\(\s*["']-c["']\s*\)\s*\.arg\s*\(\s*[a-zA-Z_]/,
+      "Shell spawned with an argument built from a variable — command injection risk if that value includes user input.",
+      "Avoid invoking a shell; call the target program directly via Command::new(program).args([...]) with fixed argument slots.",
+      { bad: 'Command::new("sh").arg("-c").arg(user_input).spawn();', good: 'Command::new(program).args(&fixed_args).spawn();' }),
+    r("rust-weak-hash-md5","crypto","medium","high","CWE-327",
+      /\bmd5::(compute|Md5)\b|Md5::new\s*\(/,
+      "MD5 is cryptographically broken; unsafe for passwords or integrity checks.",
+      "Use the sha2 crate (Sha256) for integrity, or argon2/bcrypt crates specifically for password hashing.",
+      { bad: "let digest = md5::compute(data);", good: "let digest = Sha256::digest(data); // or argon2 for passwords" }),
+    r("rust-sql-injection-format","injection","high","medium","CWE-89",
+      /\.(query|execute)\s*\(\s*&?format!\s*\(/,
+      "SQL query built with format!() string interpolation instead of a parameterized query.",
+      "Use a parameterized query (e.g. sqlx::query!(\"...WHERE id = $1\", id) or a bound placeholder) instead of format!().",
+      { bad: 'sqlx::query(&format!("SELECT * FROM t WHERE id={}", id))', good: 'sqlx::query!("SELECT * FROM t WHERE id = $1", id)' }),
+    r("rust-unsafe-block-review","memory-safety","low","low","CWE-704",
+      /\bunsafe\s*\{/,
+      "unsafe block found — Rust's memory-safety guarantees don't apply inside it; needs manual review.",
+      "Keep unsafe blocks as small as possible, document the invariant that makes them sound, and confirm bounds/lifetime assumptions hold.",
+      { bad: "unsafe { *raw_ptr = value; }", good: "unsafe { /* SAFETY: raw_ptr is non-null and valid for writes, checked above */ *raw_ptr = value; }" }),
+  ];
+
+  function r(id, category, severity, confidence, cwe, pattern, message, fixHint, example) {
+    return { id, category, severity, confidence, cwe, pattern, message, fixHint, example: example || null };
+  }
+
+  const SEVERITY_ORDER = { low: 0, medium: 1, high: 2, critical: 3 };
+  const SEVERITY_LABEL = { critical: "Critical", high: "High", medium: "Medium", low: "Low" };
+  const CATEGORY_LABEL = {
+    secrets: "Secrets", injection: "Injection", crypto: "Crypto", deserialization: "Deserialization",
+    xss: "XSS", misconfig: "Misconfig", "memory-safety": "Memory safety", ssrf: "SSRF",
+    auth: "Auth / JWT", dos: "DoS / ReDoS", xxe: "XXE", "proto-pollution": "Prototype pollution",
+    csrf: "CSRF", "access-control": "Access control", logging: "Logging / monitoring",
+  };
+
+  // ---- OWASP Top 10:2021 mapping ----
+  // Rules are mapped by category rather than per-rule: every rule in a category shares the
+  // same root cause class, so this keeps the mapping maintainable as new rules are added.
+  // memory-safety findings (C/C++ buffer overflows etc.) fall outside the web-focused OWASP
+  // Top 10 and are labelled against CWE Top 25 instead.
+  const CATEGORY_OWASP = {
+    "access-control": { code: "A01:2021", name: "Broken Access Control" },
+    csrf: { code: "A01:2021", name: "Broken Access Control" },
+    crypto: { code: "A02:2021", name: "Cryptographic Failures" },
+    injection: { code: "A03:2021", name: "Injection" },
+    xss: { code: "A03:2021", name: "Injection" },
+    "proto-pollution": { code: "A03:2021", name: "Injection" },
+    dos: { code: "A04:2021", name: "Insecure Design" },
+    misconfig: { code: "A05:2021", name: "Security Misconfiguration" },
+    xxe: { code: "A05:2021", name: "Security Misconfiguration" },
+    secrets: { code: "A07:2021", name: "Identification & Authentication Failures" },
+    auth: { code: "A07:2021", name: "Identification & Authentication Failures" },
+    deserialization: { code: "A08:2021", name: "Software & Data Integrity Failures" },
+    logging: { code: "A09:2021", name: "Security Logging & Monitoring Failures" },
+    ssrf: { code: "A10:2021", name: "Server-Side Request Forgery (SSRF)" },
+    "memory-safety": { code: "CWE Top 25", name: "Memory Safety (non-web)" },
+  };
+  function owaspFor(category) {
+    return CATEGORY_OWASP[category] || { code: "—", name: "Unmapped" };
+  }
+
+  // ---- Lightweight structural preprocessor (tokenizer) ----
+  // Naive per-physical-line regex has two well-known failure modes: it fires on
+  // matches sitting inside comments (false positives), and it misses matches
+  // that span a wrapped multi-line statement, e.g.
+  //   cursor.execute(
+  //     f"SELECT * FROM users WHERE id = {user_id}"
+  //   )
+  // This pass walks the source once, strips // # /* */ comments, keeps string
+  // contents intact (secrets live inside string literals), and joins any
+  // statement that spans multiple physical lines — either via an open
+  // (),[],{} depth or a trailing backslash continuation — into one logical
+  // line before any rule pattern ever runs against it. It is a shallow,
+  // token-aware pass rather than a full language parser, but it removes the
+  // two biggest sources of regex-only noise.
+  function buildLogicalLines(text) {
+    const n = text.length;
+    let i = 0;
+    let line = 1;
+    const logical = [];
+    let buf = "";
+    let bufStartLine = 1;
+    let bufEndLine = 1;
+    let depth = 0;
+
+    function flush() {
+      if (buf.trim().length) logical.push({ text: buf, startLine: bufStartLine, endLine: bufEndLine });
+      buf = "";
+    }
+
+    while (i < n) {
+      const ch = text[i];
+
+      // line comments: // ... and # ...
+      if ((ch === "/" && text[i + 1] === "/") || ch === "#") {
+        while (i < n && text[i] !== "\n") i++;
+        continue;
+      }
+      // block comments: /* ... */
+      if (ch === "/" && text[i + 1] === "*") {
+        i += 2;
+        while (i < n && !(text[i] === "*" && text[i + 1] === "/")) { if (text[i] === "\n") line++; i++; }
+        i = Math.min(i + 2, n);
+        continue;
+      }
+      // python triple-quoted strings — kept, newlines flattened to spaces
+      if ((ch === '"' && text.slice(i, i + 3) === '"""') || (ch === "'" && text.slice(i, i + 3) === "'''")) {
+        const q = text.slice(i, i + 3);
+        const start = i;
+        i += 3;
+        while (i < n && text.slice(i, i + 3) !== q) { if (text[i] === "\n") line++; i++; }
+        i = Math.min(i + 3, n);
+        buf += text.slice(start, i).replace(/\n/g, " ");
+        continue;
+      }
+      // single/double/backtick-quoted strings — kept intact for secret matches
+      if (ch === '"' || ch === "'" || ch === "`") {
+        const q = ch;
+        const start = i;
+        i++;
+        while (i < n && text[i] !== q) {
+          if (text[i] === "\\") i++;
+          else if (text[i] === "\n" && q !== "`") break;
+          i++;
+        }
+        i = Math.min(i + 1, n);
+        buf += text.slice(start, i).replace(/\n/g, " ");
+        continue;
+      }
+
+      if (ch === "(" || ch === "[" || ch === "{") { depth++; buf += ch; i++; continue; }
+      if (ch === ")" || ch === "]" || ch === "}") { depth = Math.max(0, depth - 1); buf += ch; i++; continue; }
+
+      if (ch === "\\" && text[i + 1] === "\n") { buf += " "; i += 2; line++; bufEndLine = line; continue; }
+
+      if (ch === "\n") {
+        line++;
+        if (depth > 0) { buf += " "; bufEndLine = line; i++; continue; }
+        flush();
+        i++;
+        bufStartLine = line;
+        bufEndLine = line;
+        continue;
+      }
+
+      buf += ch;
+      i++;
+    }
+    flush();
+    return logical;
+  }
+
+  // Matches a single logical line against every rule. Shared by the
+  // synchronous scanText() (kept for parity with the CLI/cli.js port, and
+  // used for the taint tracer's own needs) and the chunked scanTextAsync()
+  // the browser UI actually calls, so the two never drift apart.
+  function matchLogicalLine(ll, nosecLines) {
+    const out = [];
+    for (let ln = ll.startLine; ln <= ll.endLine; ln++) {
+      if (nosecLines.has(ln)) return out;
+    }
+    for (const rule of RULES) {
+      rule.pattern.lastIndex = 0;
+      if (rule.pattern.test(ll.text)) {
+        out.push({
+          ruleId: rule.id, category: rule.category, severity: rule.severity,
+          confidence: rule.confidence, cwe: rule.cwe, owasp: owaspFor(rule.category),
+          message: rule.message, line: ll.startLine, snippet: ll.text.trim().slice(0, 200),
+          fixHint: rule.fixHint, example: rule.example,
+        });
+      }
+    }
+    return out;
+  }
+
+  function buildNosecLines(text) {
+    const nosecLines = new Set();
+    text.split(/\r?\n/).forEach((l, idx) => {
+      if (/(\/\/|#)\s*nosec/i.test(l)) nosecLines.add(idx + 1);
+    });
+    return nosecLines;
+  }
+
+  function scanText(text) {
+    const nosecLines = buildNosecLines(text);
+    const findings = [];
+    buildLogicalLines(text).forEach(ll => findings.push(...matchLogicalLine(ll, nosecLines)));
+    return findings;
+  }
+
+  // Runtime-analysis pass used by the UI: identical matching logic to
+  // scanText(), but chunked across setTimeout(0) ticks so a large paste
+  // doesn't freeze the tab for the whole scan. Reports progress and honors
+  // cancellation (either an explicit Cancel click, or a newer scan
+  // superseding this one) via the token check.
+  function scanTextAsync(text, onProgress, token, isCurrentToken) {
+    return new Promise((resolve, reject) => {
+      const nosecLines = buildNosecLines(text);
+      const logicalLines = buildLogicalLines(text);
+      const total = logicalLines.length;
+      const findings = [];
+      const CHUNK = 300; // logical lines per tick — 300 * 118 rules is comfortably under a frame budget
+      let i = 0;
+
+      function step() {
+        if (!isCurrentToken(token)) { reject(new Error("cancelled")); return; }
+        const end = Math.min(i + CHUNK, total);
+        for (; i < end; i++) findings.push(...matchLogicalLine(logicalLines[i], nosecLines));
+        if (onProgress) onProgress(i, total);
+        if (i < total) setTimeout(step, 0);
+        else resolve(findings);
+      }
+      setTimeout(step, 0);
+    });
+  }
+
+  // ---- Scoring engine ----
+  // Deliberately not a literal CVSS calculator (that needs a full attack
+  // vector, so it's meaningless per-line) — this is a CVSS-inspired weighting
+  // of severity against detection confidence, aggregated with diminishing
+  // returns per rule so one noisy rule can't single-handedly tank the score.
+  const SEVERITY_WEIGHT = { critical: 10, high: 6, medium: 3, low: 1 };
+  const CONFIDENCE_WEIGHT = { high: 1, medium: 0.7, low: 0.4 };
+
+  function findingRiskScore(f) {
+    const raw = SEVERITY_WEIGHT[f.severity] * CONFIDENCE_WEIGHT[f.confidence];
+    return Math.round(Math.min(10, raw) * 10) / 10;
+  }
+
+  function computeScore(findings) {
+    const seenCount = {};
+    const categoryLoss = {};
+    let deduction = 0;
+
+    findings.forEach(f => {
+      seenCount[f.ruleId] = (seenCount[f.ruleId] || 0) + 1;
+      const repeatFactor = 1 / Math.sqrt(seenCount[f.ruleId]); // 1st hit full weight, later hits taper off
+      const base = SEVERITY_WEIGHT[f.severity] * CONFIDENCE_WEIGHT[f.confidence] * repeatFactor;
+      deduction += base;
+      categoryLoss[f.category] = (categoryLoss[f.category] || 0) + base;
+    });
+
+    const score = Math.max(0, Math.round(100 - deduction));
+    let grade;
+    if (score >= 90) grade = "A";
+    else if (score >= 80) grade = "B";
+    else if (score >= 65) grade = "C";
+    else if (score >= 50) grade = "D";
+    else grade = "F";
+
+    const topCategories = Object.entries(categoryLoss)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([category, loss]) => ({ category, loss: Math.round(loss * 10) / 10 }));
+
+    return { score, grade, topCategories };
+  }
+
+  // ---- Taint tracking (source -> sink) ----
+  // Real but intentionally scoped: a single linear pass over the file, tracking
+  // which variables currently hold a value that originated from an untrusted
+  // source. It follows plain assignment (`x = y`), a handful of C copy
+  // functions (strcpy/strcat/memcpy), and scanf/gets/fgets writing into an
+  // argument. It does NOT model branches, loops, function calls/returns
+  // across functions, string concatenation, or object/array field access —
+  // those need a real parser (AST) and call graph, which a regex pass can't
+  // give you. What it reports is real: every flow below is a chain the tool
+  // actually traced through this file, not a per-line guess.
+  const TAINT_SOURCES = [
+    { re: /\binput\s*\(/, label: "input()" },
+    { re: /\b(request\.(GET|POST|args|form|json|data)|req\.(query|body|params))\b/, label: "HTTP request" },
+    { re: /\bsys\.argv\b/, label: "argv" },
+    { re: /\bprocess\.argv\b/, label: "argv" },
+    { re: /\bprompt\s*\(/, label: "prompt()" },
+    { re: /\b(document\.location|location\.search|location\.hash)\b/, label: "URL" },
+    { re: /\bos\.environ\.get\s*\(/, label: "env var" },
+    { re: /\bgetenv\s*\(/, label: "env var" },
+  ];
+
+  // Functions that write directly into a passed-in variable (C-style out-params),
+  // handled separately from `x = y` assignment since the taint lands on an argument.
+  const TAINT_ARG_WRITERS = [
+    { re: /\b(scanf|fscanf)\s*\(([^)]*)\)/, label: "scanf() input" },
+    { re: /\bgets\s*\(([^)]*)\)/, label: "gets() input", singleArg: true },
+    { re: /\bfgets\s*\(([^)]*)\)/, label: "fgets() input" },
+  ];
+
+  const TAINT_SINKS = [
+    { re: /\beval\s*\(/, label: "eval()", severity: "critical" },
+    { re: /\bnew Function\s*\(/, label: "Function()", severity: "critical" },
+    { re: /\bos\.system\s*\(/, label: "os.system()", severity: "critical" },
+    { re: /(?<!\w)system\s*\(/, label: "system()", severity: "critical" },
+    { re: /subprocess\.\w+\s*\([^)]*shell\s*=\s*True/, label: "subprocess(shell=True)", severity: "critical" },
+    { re: /child_process\.(exec|execSync)\s*\(/, label: "child_process.exec()", severity: "critical" },
+    { re: /\.execute\s*\(/, label: "SQL execute()", severity: "high" },
+    { re: /\.innerHTML\s*=/, label: "innerHTML assignment", severity: "high" },
+    { re: /\bprintf\s*\(/, label: "printf()", severity: "high" },
+    { re: /\bstrcpy\s*\(/, label: "strcpy()", severity: "high" },
+    { re: /\bstrcat\s*\(/, label: "strcat()", severity: "high" },
+    { re: /\bpickle\.(load|loads)\s*\(/, label: "pickle.load()", severity: "high" },
+    { re: /yaml\.load\s*\(/, label: "yaml.load()", severity: "high" },
+    { re: /\bopen\s*\(/, label: "open()", severity: "medium" },
+  ];
+
+  function argNames(argsStr) {
+    return argsStr.split(",").map(s => s.trim())
+      .filter(s => !/^["'].*["']$/.test(s))          // skip string literals (format strings)
+      .filter(s => !/^(stdin|stdout|stderr)$/.test(s))
+      .map(s => s.replace(/^&/, "").replace(/\[.*\]$/, "").trim())
+      .filter(s => /^[A-Za-z_]\w*$/.test(s));
+  }
+
+  function wordIn(name, text) {
+    return new RegExp("\\b" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(text);
+  }
+
+  const FIRST_ARG_ONLY = new Set(["printf()", "SQL execute()"]);
+
+  function firstArgText(line, openParenIdx) {
+    let depth = 0, out = "";
+    for (let i = openParenIdx; i < line.length; i++) {
+      const c = line[i];
+      if (c === "(" || c === "[" || c === "{") { depth++; out += c; continue; }
+      if (c === ")" || c === "]" || c === "}") { if (depth === 0) break; depth--; out += c; continue; }
+      if (c === "," && depth === 0) break;
+      out += c;
+    }
+    return out;
+  }
+
+  function sinkMatchesVar(sink, line, varName) {
+    if (!FIRST_ARG_ONLY.has(sink.label)) return wordIn(varName, line);
+    const m = sink.re.exec(line);
+    if (!m) return false;
+    const openParen = line.indexOf("(", m.index);
+    if (openParen === -1) return false;
+    return wordIn(varName, firstArgText(line, openParen + 1));
+  }
+
+  function traceTaint(text) {
+    const lines = text.split(/\r?\n/);
+    const taint = {}; // varName -> { label, originLine, path: [{var, line, snippet}] }
+    const flows = [];
+    const seen = new Set();
+
+    lines.forEach((rawLine, idx) => {
+      const line = rawLine;
+      const lineNo = idx + 1;
+      if (/(\/\/|#)\s*nosec/i.test(line)) return;
+
+      // 1. Sink check, using taint state as of BEFORE this line's own updates.
+      for (const sink of TAINT_SINKS) {
+        sink.re.lastIndex = 0;
+        if (!sink.re.test(line)) continue;
+        for (const varName in taint) {
+          if (!sinkMatchesVar(sink, line, varName)) continue;
+          const key = varName + "|" + taint[varName].originLine + "|" + lineNo + "|" + sink.label;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          flows.push({
+            varName, sourceLabel: taint[varName].label, sourceLine: taint[varName].originLine,
+            path: taint[varName].path.slice(), sinkLabel: sink.label, sinkLine: lineNo,
+            sinkSnippet: line.trim().slice(0, 160), severity: sink.severity,
+          });
+        }
+      }
+
+      // 2. scanf/gets/fgets writing directly into an argument.
+      for (const w of TAINT_ARG_WRITERS) {
+        const m = line.match(w.re);
+        if (!m) continue;
+        const names = w.singleArg ? argNames(m[1] || "") : argNames(m[2] || m[1] || "");
+        names.forEach(v => {
+          taint[v] = { label: w.label, originLine: lineNo, path: [{ var: v, line: lineNo, snippet: line.trim().slice(0, 120) }] };
+        });
+      }
+
+      // 3. C copy functions: dest inherits src's taint.
+      const copyMatch = line.match(/\b(strcpy|strcat|memcpy)\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)/);
+      if (copyMatch) {
+        const dest = copyMatch[2], src = copyMatch[3];
+        if (taint[src]) {
+          taint[dest] = { label: taint[src].label, originLine: taint[src].originLine,
+            path: [...taint[src].path, { var: dest, line: lineNo, snippet: line.trim().slice(0, 120) }] };
+        }
+      }
+
+      // 4. Plain assignment: x = <expr>  (excludes ==, <=, >=, != via the lookahead/prior-char check).
+      const assign = line.match(/^\s*(?:[A-Za-z_][\w:<>*&]*\s+)?([A-Za-z_]\w*)\s*=(?!=)\s*(.+?);?\s*$/);
+      if (assign) {
+        const varName = assign[1], rhs = assign[2];
+        const srcHit = TAINT_SOURCES.find(s => s.re.test(rhs));
+        if (srcHit) {
+          taint[varName] = { label: srcHit.label, originLine: lineNo, path: [{ var: varName, line: lineNo, snippet: line.trim().slice(0, 120) }] };
+        } else {
+          const propagatedFrom = Object.keys(taint).find(v => v !== varName && wordIn(v, rhs));
+          if (propagatedFrom) {
+            const prior = taint[propagatedFrom];
+            taint[varName] = { label: prior.label, originLine: prior.originLine,
+              path: [...prior.path, { var: varName, line: lineNo, snippet: line.trim().slice(0, 120) }] };
+          } else if (taint[varName]) {
+            delete taint[varName]; // reassigned to a clean value — taint cleared
+          }
+        }
+      }
+    });
+
+    return flows;
+  }
+
+  function escapeSvg(str) {
+    return String(str).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  }
+
+  function renderFlowGraphSVG(flow) {
+    const steps = flow.path.length ? flow.path : [{ var: flow.varName, line: flow.sourceLine }];
+    const nodes = [
+      { label: flow.sourceLabel, sub: "line " + flow.sourceLine, type: "source" },
+      ...steps.slice(1).map(p => ({ label: p.var, sub: "line " + p.line, type: "step" })),
+      { label: flow.sinkLabel, sub: "line " + flow.sinkLine, type: "sink" },
+    ];
+    const boxW = 148, boxH = 46, gap = 44, startX = 16, y = 26;
+    const totalW = nodes.length * boxW + (nodes.length - 1) * gap + 32;
+    let svg = `<svg viewBox="0 0 ${totalW} 96" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">`;
+    svg += `<defs><marker id="arrow-${flow.sinkLine}-${flow.varName.replace(/\W/g,'')}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#576273"/></marker></defs>`;
+    nodes.forEach((n, i) => {
+      const x = startX + i * (boxW + gap);
+      const fill = n.type === "source" ? "#173B37" : n.type === "sink" ? "rgba(244,63,94,0.15)" : "#19222C";
+      const stroke = n.type === "source" ? "#5EEAD4" : n.type === "sink" ? "#F43F5E" : "#232E3A";
+      const textColor = n.type === "sink" ? "#F43F5E" : n.type === "source" ? "#5EEAD4" : "#E6EDF3";
+      svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+      svg += `<text x="${x + boxW / 2}" y="${y + 19}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="${textColor}" font-weight="600">${escapeSvg(String(n.label).slice(0, 20))}</text>`;
+      svg += `<text x="${x + boxW / 2}" y="${y + 34}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#576273">${escapeSvg(n.sub)}</text>`;
+      if (i < nodes.length - 1) {
+        const x1 = x + boxW, x2 = x + boxW + gap - 4;
+        svg += `<line x1="${x1}" y1="${y + boxH / 2}" x2="${x2}" y2="${y + boxH / 2}" stroke="#576273" stroke-width="1.5" marker-end="url(#arrow-${flow.sinkLine}-${flow.varName.replace(/\W/g,'')})"/>`;
+      }
+    });
+    svg += `</svg>`;
+    return svg;
+  }
+
+  function renderDataFlow(flows) {
+    const section = document.getElementById("dataflowSection");
+    const container = document.getElementById("flowGraphs");
+    if (!flows.length) {
+      section.style.display = "none";
+      container.innerHTML = "";
+      return;
+    }
+    section.style.display = "block";
+    const sorted = [...flows].sort((a, b) => SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity]);
+    container.innerHTML = sorted.map(f => `
+      <div class="flow-card">
+        <div class="flow-head">
+          <span class="sev-tag ${f.severity}">${f.severity}</span>
+          <span class="finding-loc">confirmed flow: ${escapeHtml(f.sourceLabel)} (line ${f.sourceLine}) &rarr; ${escapeHtml(f.sinkLabel)} (line ${f.sinkLine})</span>
+        </div>
+        <div class="flow-graph">${renderFlowGraphSVG(f)}</div>
+        <div class="finding-snippet">${escapeHtml(f.sinkSnippet)}</div>
+      </div>
+    `).join("");
+  }
+
+  // ---- UI wiring ----
+  const codeInput = document.getElementById("codeInput");
+  const lineCount = document.getElementById("lineCount");
+  const scanBtn = document.getElementById("scanBtn");
+  const sweepLayer = document.getElementById("sweepLayer");
+  const resultsBody = document.getElementById("resultsBody");
+  const summaryStrip = document.getElementById("summaryStrip");
+  const scanStatus = document.getElementById("scanStatus");
+  const fileInput = document.getElementById("fileInput");
+  const failOnSelect = document.getElementById("failOn");
+  const scoreBox = document.getElementById("scoreBox");
+  const scoreRing = document.getElementById("scoreRing");
+  const scoreNum = document.getElementById("scoreNum");
+  const scoreGrade = document.getElementById("scoreGrade");
+  const scoreCats = document.getElementById("scoreCats");
+
+  function updateLineCount() {
+    const n = codeInput.value ? codeInput.value.split(/\r?\n/).length : 0;
+    lineCount.textContent = n + (n === 1 ? " line" : " lines");
+  }
+
+  const fileMeta = document.getElementById("fileMeta");
+  const codePanelEl = document.getElementById("codePanel");
+  const MAX_FILE_BYTES = 4 * 1024 * 1024;
+
+  codeInput.addEventListener("input", () => {
+    updateLineCount();
+    // Only warn on genuine typing/pasting — loadFile() sets its own fileMeta
+    // message after a programmatic assignment, which doesn't fire "input".
+    if (codeInput.value.length > MAX_FILE_BYTES) {
+      fileMeta.className = "file-meta warn";
+      fileMeta.textContent = `${formatBytes(codeInput.value.length)} in the editor — the scan below runs in chunks to stay responsive, but the CLI is a better fit for anything this large.`;
+    }
+  });
+
+  const MAX_FILE_BYTES_HARD = 25 * 1024 * 1024; // hard cap — refuse to even attempt reading it
+
+  function formatBytes(n) {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  // Crude but cheap: a NUL byte or a high ratio of control characters in the
+  // first couple KB means this is very likely not source code (an image,
+  // archive, etc. dropped by mistake), worth a warning rather than a silent
+  // wall of regex noise.
+  function looksBinary(sample) {
+    if (!sample.length) return false;
+    let suspicious = 0;
+    for (let i = 0; i < sample.length; i++) {
+      const code = sample.charCodeAt(i);
+      if (code === 0) return true;
+      if (code < 9 || (code > 13 && code < 32)) suspicious++;
+    }
+    return suspicious / sample.length > 0.05;
+  }
+
+  function loadFile(file) {
+    if (!file) return;
+    fileMeta.className = "file-meta";
+
+    if (file.size > MAX_FILE_BYTES_HARD) {
+      fileMeta.className = "file-meta error";
+      fileMeta.textContent = `${file.name} is ${formatBytes(file.size)} — too large for the in-browser scanner (limit ${formatBytes(MAX_FILE_BYTES_HARD)}). Use the CLI for files or repos this size.`;
+      return;
+    }
+
+    fileMeta.textContent = `Reading ${file.name}...`;
+    const reader = new FileReader();
+    const willTruncate = file.size > MAX_FILE_BYTES;
+
+    reader.onprogress = (ev) => {
+      if (ev.lengthComputable && file.size > 1024 * 1024) {
+        fileMeta.textContent = `Reading ${file.name}... ${formatBytes(ev.loaded)} / ${formatBytes(file.size)}`;
+      }
+    };
+
+    reader.onerror = () => {
+      fileMeta.className = "file-meta error";
+      fileMeta.textContent = `Couldn't read ${file.name} — try again, or open it in an editor and paste the contents instead.`;
+    };
+
+    reader.onload = (ev) => {
+      let text = ev.target.result;
+      if (looksBinary(text.slice(0, 2000))) {
+        fileMeta.className = "file-meta warn";
+        fileMeta.textContent = `${file.name} looks like a binary file, not source code — loaded anyway, but expect noisy/meaningless results.`;
+      } else if (willTruncate) {
+        text = text.slice(0, MAX_FILE_BYTES);
+        fileMeta.className = "file-meta warn";
+        fileMeta.textContent = `${file.name} is ${formatBytes(file.size)} — truncated to the first ${formatBytes(MAX_FILE_BYTES)} for the in-browser scanner. For the full file, use the CLI.`;
+      } else {
+        fileMeta.textContent = `${file.name} (${formatBytes(file.size)})`;
+      }
+      codeInput.value = text;
+      updateLineCount();
+    };
+
+    reader.readAsText(file);
+  }
+
+  fileInput.addEventListener("change", (e) => loadFile(e.target.files[0]));
+
+  ["dragover", "drop"].forEach(evt => codePanelEl.addEventListener(evt, e => e.preventDefault()));
+  codePanelEl.addEventListener("dragover", () => codePanelEl.classList.add("drop-active"));
+  ["dragleave", "drop"].forEach(evt => codePanelEl.addEventListener(evt, () => codePanelEl.classList.remove("drop-active")));
+  codePanelEl.addEventListener("drop", (e) => loadFile(e.dataTransfer.files[0]));
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, ch => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[ch]));
+  }
+
+  function renderResults(findings, failOn) {
+    if (findings.length === 0) {
+      summaryStrip.style.display = "none";
+      resultsBody.innerHTML = `<div class="clean-banner">&#10003; No pattern matches found in the scanned text.</div>`;
+      return;
+    }
+
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    findings.forEach(f => counts[f.severity]++);
+
+    summaryStrip.style.display = "flex";
+    summaryStrip.innerHTML = ["critical", "high", "medium", "low"]
+      .filter(s => counts[s] > 0)
+      .map(s => `<span class="chip ${s}"><span class="swatch"></span>${SEVERITY_LABEL[s]} <span class="n">${counts[s]}</span></span>`)
+      .join("");
+
+    const sorted = [...findings].sort((a, b) => SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity] || a.line - b.line);
+
+    resultsBody.innerHTML = sorted.map((f, i) => `
+      <div class="finding" style="animation-delay:${Math.min(i * 35, 600)}ms">
+        <div class="finding-top">
+          <span class="sev-tag ${f.severity}">${f.severity}</span>
+          <span class="sev-tag owasp-tag" title="${escapeHtml(f.owasp.name)}">${f.owasp.code}</span>
+          <span class="finding-loc">line ${f.line} &middot; ${f.cwe} &middot; confidence: ${f.confidence} &middot; risk ${findingRiskScore(f)}/10</span>
+        </div>
+        <div class="finding-msg">${escapeHtml(f.message)}</div>
+        <div class="finding-snippet">${escapeHtml(f.snippet)}</div>
+        <div class="finding-fix"><span class="lbl">Fix</span><span>${escapeHtml(f.fixHint)}</span></div>
+        ${f.example ? `
+        <div class="finding-example">
+          <div class="ex-row ex-bad"><span class="ex-tag">Vulnerable</span><code>${escapeHtml(f.example.bad)}</code></div>
+          <div class="ex-row ex-good"><span class="ex-tag">Fixed</span><code>${escapeHtml(f.example.good)}</code></div>
+        </div>` : ""}
+      </div>
+    `).join("");
+  }
+
+  function renderScore(findings) {
+    const { score, grade, topCategories } = computeScore(findings);
+    const gradeColor = { A: "var(--safe)", B: "var(--accent)", C: "var(--medium)", D: "var(--high)", F: "var(--critical)" }[grade];
+
+    scoreRing.style.setProperty("--ring-pct", score);
+    scoreRing.style.setProperty("--ring-color", gradeColor);
+    scoreNum.textContent = score;
+    scoreGrade.textContent = `Grade ${grade} \u00b7 Security score ${score}/100`;
+    scoreGrade.style.color = gradeColor;
+    scoreCats.innerHTML = topCategories.length
+      ? topCategories.map(c => `<span class="score-cat-chip">${CATEGORY_LABEL[c.category] || c.category} \u2212${c.loss}</span>`).join("")
+      : `<span class="score-cat-chip">No deductions</span>`;
+    scoreBox.style.display = "flex";
+  }
+
+  const scanProgress = document.getElementById("scanProgress");
+  const scanProgressBar = document.getElementById("scanProgressBar");
+  const cancelScanBtn = document.getElementById("cancelScanBtn");
+  let scanToken = 0;          // bumped when a new scan starts
+  let cancelRequested = false; // set by the Cancel button, scoped to the current token
+
+  cancelScanBtn.addEventListener("click", () => { cancelRequested = true; });
+
+  function resetScanUi() {
+    sweepLayer.classList.remove("active");
+    scanBtn.disabled = false;
+    cancelScanBtn.style.display = "none";
+    scanProgress.style.display = "none";
+  }
+
+  scanBtn.addEventListener("click", async () => {
+    const text = codeInput.value;
+    if (!text.trim()) {
+      resultsBody.innerHTML = `<div class="empty-state"><div>&#9679;&#9675;&#9675;</div><div>Nothing to scan yet.<br>Paste some code first.</div></div>`;
+      summaryStrip.style.display = "none";
+      scoreBox.style.display = "none";
+      document.getElementById("dataflowSection").style.display = "none";
+      return;
+    }
+
+    const myToken = ++scanToken;
+    cancelRequested = false;
+    scanBtn.disabled = true;
+    cancelScanBtn.style.display = "inline-block";
+    scanStatus.textContent = "Scanning...";
+    sweepLayer.classList.add("active");
+    resultsBody.innerHTML = "";
+    summaryStrip.style.display = "none";
+    scoreBox.style.display = "none";
+    document.getElementById("dataflowSection").style.display = "none";
+    scanProgress.style.display = "block";
+    scanProgressBar.style.width = "0%";
+
+    const startedAt = performance.now();
+
+    try {
+      const findings = await scanTextAsync(
+        text,
+        (done, total) => {
+          scanProgressBar.style.width = `${Math.round((done / Math.max(total, 1)) * 100)}%`;
+          scanStatus.textContent = `Scanning... ${done.toLocaleString()} / ${total.toLocaleString()} lines`;
+        },
+        myToken,
+        (t) => t === scanToken && !cancelRequested
+      );
+
+      if (myToken !== scanToken) return; // superseded by a newer scan — let that one own the UI
+
+      const elapsedMs = Math.round(performance.now() - startedAt);
+      const failOn = failOnSelect.value;
+      renderResults(findings, failOn);
+      renderScore(findings);
+      renderDataFlow(traceTaint(text));
+      resetScanUi();
+
+      const lineTotal = text.split(/\r?\n/).length;
+      const rate = elapsedMs > 0 ? Math.round((lineTotal / elapsedMs) * 1000) : lineTotal;
+      const timing = `${elapsedMs < 1000 ? elapsedMs + "ms" : (elapsedMs / 1000).toFixed(1) + "s"} \u00b7 ~${rate.toLocaleString()} lines/s`;
+
+      if (failOn === "none") {
+        scanStatus.textContent = `${findings.length} finding(s) \u00b7 ${timing}`;
+      } else {
+        const threshold = SEVERITY_ORDER[failOn];
+        const blocking = findings.filter(f => SEVERITY_ORDER[f.severity] >= threshold).length;
+        scanStatus.textContent = `${blocking > 0 ? `${blocking} blocking / ${findings.length} total` : `${findings.length} finding(s), none blocking`} \u00b7 ${timing}`;
+      }
+    } catch (err) {
+      if (myToken !== scanToken) return; // a newer scan already started; it owns the UI now
+      resetScanUi();
+      scanStatus.textContent = "Scan cancelled";
+    }
+  });
+
+  // ---- OWASP Top 10:2021 coverage panel ----
+  const OWASP_TOP10_2021 = [
+    { code: "A01:2021", name: "Broken Access Control" },
+    { code: "A02:2021", name: "Cryptographic Failures" },
+    { code: "A03:2021", name: "Injection" },
+    { code: "A04:2021", name: "Insecure Design" },
+    { code: "A05:2021", name: "Security Misconfiguration" },
+    { code: "A06:2021", name: "Vulnerable & Outdated Components" },
+    { code: "A07:2021", name: "Identification & Authentication Failures" },
+    { code: "A08:2021", name: "Software & Data Integrity Failures" },
+    { code: "A09:2021", name: "Security Logging & Monitoring Failures" },
+    { code: "A10:2021", name: "Server-Side Request Forgery (SSRF)" },
+  ];
+
+  function renderOwaspCoverage() {
+    const grid = document.getElementById("owaspGrid");
+    if (!grid) return;
+    const counts = {};
+    RULES.forEach(rule => {
+      const code = owaspFor(rule.category).code;
+      counts[code] = (counts[code] || 0) + 1;
+    });
+    grid.innerHTML = OWASP_TOP10_2021.map(item => {
+      const n = counts[item.code] || 0;
+      const covered = n > 0;
+      const note = covered ? `${n} rule${n === 1 ? "" : "s"}` : "needs SCA / dependency scanning — out of scope for pattern matching";
+      return `
+        <div class="owasp-card${covered ? "" : " uncovered"}">
+          <div class="owasp-code">${item.code}</div>
+          <div class="owasp-name">${escapeHtml(item.name)}</div>
+          <div class="owasp-count"><span>${covered ? "coverage" : "not covered"}</span><span class="n">${covered ? n : "—"}</span></div>
+          ${!covered ? `<div class="owasp-count" style="margin-top:4px;"><span style="color:var(--text-faint);font-size:10px;">${note}</span></div>` : ""}
+        </div>`;
+    }).join("");
+  }
+
+  updateLineCount();
+  renderOwaspCoverage();
+
+  // ---- CI/CD & CLI section: tabs + copy buttons ----
+  document.querySelectorAll(".cicd-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".cicd-tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.querySelectorAll(".cicd-panel").forEach(p => p.classList.remove("active"));
+      document.getElementById(`cicd-${btn.dataset.cicdTab}`).classList.add("active");
+    });
+  });
+
+  document.querySelectorAll(".copy-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const pre = btn.closest(".code-block").querySelector("pre");
+      try {
+        await navigator.clipboard.writeText(pre.textContent);
+        const original = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = original; }, 1200);
+      } catch (e) { /* clipboard access may be unavailable in this context */ }
+    });
+  });
+})();
+
+
+
+
